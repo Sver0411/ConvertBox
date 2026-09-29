@@ -56,6 +56,7 @@ test("WebP output follows runtime encoding capability", async ({ page }) => {
     return canvas.toDataURL("image/webp").startsWith("data:image/webp");
   });
   await page.getByLabel("选择文件").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: fixture("sample.png") });
+  await expect(page.locator(".file-row")).toHaveCount(1);
   const options = await page.getByLabel("目标格式", { exact: true }).locator("option").allTextContents();
   if (!supported) {
     // The server may still advertise WebP even when the browser cannot encode it.

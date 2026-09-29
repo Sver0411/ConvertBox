@@ -1,26 +1,28 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, ArrowRight, ArrowUp, ArrowDown, Check, ChevronDown, CircleAlert, FileImage, FileText, Film, FolderPlus, Music2, RotateCcw, Trash2, UploadCloud, X, LayoutGrid, Clock3, Info } from "lucide-react";
+import { ChevronDown, CircleAlert, FolderPlus } from "lucide-react";
 import { IMAGE_FORMATS, transitionStatus } from "@core/capabilities";
 import { outputFilename } from "@core/filename";
 import { detectFileType } from "@detection/detect";
 import type { ConversionJob, ConversionSettings, FileDescriptor, ImageFormat } from "@shared/index";
 import { browserCanEncode, convertImage, type ImageMetrics } from "@/lib/image-converter";
-import { downloadBlob, downloadZip } from "@/lib/download";
-import { copy, localizeError, type Language } from "@/lib/messages";
-import { createServerJob, deleteServerJob, downloadServerJob, getServerCapabilities, pollServerJob, ServerApiError, type ServerCapabilities } from "@/lib/server-api";
+import { copy, type Language } from "@/lib/messages";
+import { createServerJob, deleteServerJob, getServerCapabilities, pollServerJob, ServerApiError, type ServerCapabilities } from "@/lib/server-api";
 import HistoryPanel from "@/components/history-panel";
 import { clearHistory, listHistory, saveHistory, type HistoryEntry } from "@/lib/history";
-import { chinesePresetNames, defaultPresets, loadCustomPresets, storeCustomPresets, type Preset } from "@/lib/presets";
-import { conversionViews, isConversionView, preferredOutput, toolViews, viewAccepts, viewInputAccept, viewOutputs, type ConversionView, type ToolView } from "@/lib/workspace-views";
-import { DEFAULT_LOCAL_MEMORY_BUDGET, estimatedImageBytes, LocalImageScheduler } from "@/lib/local-scheduler";
+import { defaultPresets, loadCustomPresets, storeCustomPresets, type Preset } from "@/lib/presets";
+import { isConversionView, preferredOutput, toolViews, viewAccepts, viewInputAccept, viewOutputs, type ConversionView, type ToolView } from "@/lib/workspace-views";
+import { DEFAULT_LOCAL_MEMORY_BUDGET, estimatedImageBytes } from "@/lib/local-scheduler";
+import { useConversionQueue } from "@/hooks/useConversionQueue";
 import { effectiveSettings, isStale, type EffectiveControls } from "@/lib/effective-settings";
+import { DropZone, FileList, FileRow, WorkspaceFooter } from "@/components/workspace-parts";
+import { ImageSettings, MediaSettings, PdfSettings, PresetControls, QualitySettings } from "@/components/workspace-settings";
+import { WorkspaceShell } from "@/components/workspace-shell";
 
 const MAX_INPUT_SIZE = 25 * 1024 * 1024;
 const MAX_FILES = 100;
 const MAX_ZIP_BYTES = 64 * 1024 * 1024;
-const MAX_BATCH_RUNNERS = 4;
 const LOCAL_IMAGE_FORMATS = new Set(["jpg", "png", "webp"]);
 
 function optionsFor(descriptor: FileDescriptor, browserFormats: ImageFormat[], server: ServerCapabilities | null): string[] {
@@ -39,12 +41,6 @@ function isLocal(input: string, output: string): boolean {
 
 function canUseLocal(descriptor: FileDescriptor, settings: { output: string; width?: number; height?: number; quality: number }, bytes: number, keepMetadata: boolean): boolean {
   return isLocal(descriptor.detectedType, settings.output) && bytes <= MAX_INPUT_SIZE && !keepMetadata && estimatedImageBytes(descriptor, settings) <= DEFAULT_LOCAL_MEMORY_BUDGET;
-}
-
-function humanSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const unit = bytes < 1024 ** 2 ? "KB" : "MB";
-  return `${(bytes / (unit === "KB" ? 1024 : 1024 ** 2)).toFixed(1)} ${unit}`;
 }
 
 export default function Workspace() {
@@ -85,8 +81,7 @@ export default function Workspace() {
   const [notice, setNotice] = useState<{ type: "limit" | "partial" | "zip" | "server"; count?: number } | null>(null);
   const effectiveControls: EffectiveControls = useMemo(() => ({ quality, width, height, keepMetadata, pages, dpi, rotation, pdfOperation, bitrate, sampleRate, resolution, fps, videoQuality, pageSize, orientation, margin }), [quality, width, height, keepMetadata, pages, dpi, rotation, pdfOperation, bitrate, sampleRate, resolution, fps, videoQuality, pageSize, orientation, margin]);
   const fileInput = useRef<HTMLInputElement>(null);
-  const controllers = useRef(new Map<string, AbortController>());
-  const localScheduler = useRef(new LocalImageScheduler(DEFAULT_LOCAL_MEMORY_BUDGET));
+  const { controllers, localScheduler, runJobs } = useConversionQueue();
   const dragDepth = useRef(0);
 
   const updateJobs = useCallback((fn: (current: ConversionJob[]) => ConversionJob[]) => {
@@ -98,8 +93,6 @@ export default function Workspace() {
     const supported = IMAGE_FORMATS.filter(browserCanEncode);
     setAvailableFormats(supported);
     if (!supported.includes("webp")) setFormat(supported.includes("png") ? "png" : "jpg");
-    const activeControllers = controllers.current;
-    return () => activeControllers.forEach(controller => controller.abort());
   }, []);
 
   useEffect(() => {
@@ -214,14 +207,11 @@ export default function Workspace() {
     updateJobs(current => current.map(job => pending.some(item => item.id === job.id)
       ? { ...job, status: transitionStatus(job.status, "QUEUED"), stage: "queued", error: undefined, errorCode: undefined, progress: null }
       : job));
-    let cursor = 0;
-    const runOne = async () => {
-      while (cursor < pending.length) {
-        const job = pending[cursor++];
-        if (jobsRef.current.find(item => item.id === job.id)?.status === "CANCELLED") continue;
+    await runJobs(pending, async job => {
+        if (jobsRef.current.find(item => item.id === job.id)?.status === "CANCELLED") return;
         const controller = new AbortController();
         controllers.current.set(job.id, controller);
-        if (controller.signal.aborted) continue;
+        if (controller.signal.aborted) return;
         const settings = { ...job.settings, quality, width, height, pages, dpi, rotation, bitrate, sample_rate: sampleRate, resolution, fps, video_quality: videoQuality };
         const settingsKey = effectiveSettings(job, effectiveControls, view);
         const local = canUseLocal(job.descriptor, settings, job.file.size, keepMetadata);
@@ -255,11 +245,9 @@ export default function Workspace() {
         } finally {
           controllers.current.delete(job.id);
         }
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(MAX_BATCH_RUNNERS, pending.length) }, runOne));
+    });
     setBusy(false);
-  }, [activeView, busy, quality, width, height, keepMetadata, pages, dpi, rotation, bitrate, sampleRate, resolution, fps, videoQuality, pageSize, orientation, margin, pdfOperation, effectiveControls, patchJob, updateJobs, recordHistory]);
+  }, [activeView, busy, quality, width, height, keepMetadata, pages, dpi, rotation, bitrate, sampleRate, resolution, fps, videoQuality, pageSize, orientation, margin, pdfOperation, effectiveControls, patchJob, updateJobs, recordHistory, controllers, localScheduler, runJobs]);
 
   const runGroup = useCallback(async (kind: "merge" | "images") => {
     if (busy) return;
@@ -294,7 +282,7 @@ export default function Workspace() {
       controllers.current.delete(id);
       setBusy(false);
     }
-  }, [activeView, busy, quality, pageSize, orientation, margin, patchJob, updateJobs, recordHistory]);
+  }, [activeView, busy, quality, pageSize, orientation, margin, patchJob, updateJobs, recordHistory, controllers]);
 
   const cancelJob = (id: string) => {
     const controller = controllers.current.get(id);
@@ -392,20 +380,13 @@ export default function Workspace() {
   const bulkOptions = supported.length ? optionsForMode(supported[0].descriptor, availableFormats, serverCapabilities, view).filter(option => supported.every(job => optionsForMode(job.descriptor, availableFormats, serverCapabilities, view).includes(option))) : availableFormats;
   const shownOptions = oneCategory === "pdf" && view !== "word" && pdfOperation !== "convert" ? ["pdf"] : bulkOptions;
   const groupKind = oneCategory === "pdf" && view !== "word" && pdfOperation === "merge" && supported.filter(job => job.file.size > 0).length >= 2 ? "merge" : oneCategory === "image" && format === "pdf" && supported.filter(job => job.file.size > 0).length >= 2 ? "images" : null;
-  const icons = { all: LayoutGrid, image: FileImage, pdf: FileText, word: FileText, audio: Music2, video: Film, history: Clock3, about: Info };
 
-  return <div className="site-shell" onDragEnter={event => { if (event.dataTransfer.types.includes("Files")) { dragDepth.current++; setDragging(true); } }} onDragOver={event => event.preventDefault()} onDragLeave={() => { dragDepth.current--; if (dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } }} onDrop={onDrop}>
-    <header className="site-header glass">
-      <span className="header-context">{language === "zh" ? "转换工作台" : "Conversion workspace"}</span>
-      <div className="header-end"><select className="theme-select" aria-label={t.theme} value={theme} onChange={event => setTheme(event.target.value as "light" | "dark" | "system")}><option value="light">{t.themeLight}</option><option value="dark">{t.themeDark}</option><option value="system">{t.themeSystem}</option></select><button className="language-switch" type="button" onClick={() => setLanguage(language === "zh" ? "en" : "zh")} aria-label={language === "zh" ? "Switch to English" : "切换为中文"}>{language === "zh" ? "EN" : "中文"}</button></div>
-    </header>
-
-    <div className="app-layout">
-      <aside className="tool-sidebar glass" aria-label={language === "zh" ? "工具分类" : "Tool categories"}>
-        <div className="sidebar-group">{conversionViews.map(item => { const Icon = icons[item]; const count = item === "all" ? jobs.length : jobs.filter(job => job.descriptor.category !== "unsupported" && viewAccepts(item, job.descriptor)).length; return <button key={item} className={`sidebar-item ${activeView === item ? "is-active" : ""}`} type="button" onClick={() => selectView(item)} aria-current={activeView === item ? "page" : undefined}><Icon size={18} strokeWidth={1.8} /><span>{t.views[item]}</span>{count > 0 && <small>{count}</small>}</button>; })}</div>
-        <div className="sidebar-group sidebar-secondary">{(["history", "about"] as const).map(item => { const Icon = icons[item]; return <button key={item} className={`sidebar-item ${activeView === item ? "is-active" : ""}`} type="button" onClick={() => selectView(item)} aria-current={activeView === item ? "page" : undefined}><Icon size={18} strokeWidth={1.8} /><span>{t.views[item]}</span></button>; })}</div>
-      </aside>
-      <main id="top" className="app-main">
+  return <WorkspaceShell jobs={jobs} activeView={activeView} language={language} theme={theme} dragging={dragging}
+    onView={selectView} onTheme={setTheme} onLanguage={() => setLanguage(language === "zh" ? "en" : "zh")}
+    onDragEnter={event => { if (event.dataTransfer.types.includes("Files")) { dragDepth.current++; setDragging(true); } }}
+    onDragOver={event => event.preventDefault()}
+    onDragLeave={() => { dragDepth.current--; if (dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false); } }}
+    onDrop={onDrop}>
       <input ref={fileInput} type="file" multiple hidden accept={isConversionView(activeView) ? viewInputAccept[activeView] : ""} onChange={event => { void addFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} aria-label={t.chooseFiles} />
       {isConversionView(activeView) && <>
       <section className={`hero ${visibleJobs.length ? "hero-compact" : ""}`} id="convert">
@@ -413,39 +394,33 @@ export default function Workspace() {
         <p className="hero-copy">{t.viewHelp[activeView]}</p>
       </section>
 
-      {!visibleJobs.length ? <section className={`drop-zone glass ${dragging ? "is-dragging" : ""}`}>
-        <div className="drop-icon"><UploadCloud size={28} strokeWidth={1.6} /></div>
-        <h2>{t.dropTitle}</h2>
-        <p>{t.dropSub}</p>
-        <button className="primary-button" onClick={() => fileInput.current?.click()}><FolderPlus size={18} /> {t.chooseFiles} <ArrowRight size={17} /></button>
-      </section> : <section className="workspace glass" aria-label={t.workspace}>
+      {!visibleJobs.length ? <DropZone language={language} dragging={dragging} onChoose={() => fileInput.current?.click()} /> : <section className="workspace glass" aria-label={t.workspace}>
         <div className="workspace-top"><div><h2>{t.yourFiles} <span className="count-badge">{visibleJobs.length}</span></h2><p>{pendingCount ? t.readyCount(pendingCount) : t.completeCount(completed.length)}{visibleJobs.length - supported.length ? ` · ${t.unsupportedCount(visibleJobs.length - supported.length)}` : ""}</p></div><button className="secondary-button" onClick={() => fileInput.current?.click()}><FolderPlus size={17} /> {t.addFiles}</button></div>
         <div className={`settings-panel ${oneCategory === "pdf" && view !== "word" ? "pdf-settings-layout" : ""}`}>
-          {(oneCategory === "image" || oneCategory === "audio" || oneCategory === "video") && <div className="preset-field"><label htmlFor="preset">{t.preset}</label><div className="preset-controls"><select id="preset" value={presetChoice} onChange={event => { setPresetChoice(event.target.value); const preset = [...defaultPresets, ...customPresets].find(item => item.id === event.target.value); if (preset) applyPreset(preset); }} disabled={busy}><option value="">{t.choosePreset}</option>{[...defaultPresets, ...customPresets].filter(item => item.category === oneCategory && supported.every(job => optionsForMode(job.descriptor, availableFormats, serverCapabilities, view).includes(item.output))).map(item => <option key={item.id} value={item.id}>{language === "zh" ? chinesePresetNames[item.id] ?? item.name : item.name}</option>)}</select><button className="text-button" onClick={() => setSavingPreset(value => !value)} disabled={busy}>{t.savePreset}</button>{customPresets.some(item => item.id === presetChoice) && <button className="text-button" onClick={deletePreset} disabled={busy}>{t.deletePreset}</button>}</div>{savingPreset && <div className="preset-controls"><input value={newPresetName} maxLength={50} placeholder={t.presetName} onChange={event => setNewPresetName(event.target.value)} onKeyDown={event => { if (event.key === "Enter") savePreset(); if (event.key === "Escape") setSavingPreset(false); }} /><button className="text-button" onClick={savePreset} disabled={!newPresetName.trim()}>{t.save}</button></div>}</div>}
+          {(oneCategory === "image" || oneCategory === "audio" || oneCategory === "video") && <PresetControls language={language} presets={[...defaultPresets, ...customPresets].filter(item => item.category === oneCategory && supported.every(job => optionsForMode(job.descriptor, availableFormats, serverCapabilities, view).includes(item.output)))} choice={presetChoice} busy={busy} saving={savingPreset} name={newPresetName} hasSelectedCustom={customPresets.some(item => item.id === presetChoice)} onChoice={id => { setPresetChoice(id); const preset = [...defaultPresets, ...customPresets].find(item => item.id === id); if (preset) applyPreset(preset); }} onToggleSaving={() => setSavingPreset(value => !value)} onDelete={deletePreset} onName={setNewPresetName} onSave={savePreset} onCancelSaving={() => setSavingPreset(false)} />}
           {shownOptions.length > 0 && <div className="setting-field"><label htmlFor="format">{t.convertTo}</label><div className="select-wrap"><select id="format" value={shownOptions.includes(format) ? format : shownOptions[0]} onChange={event => { const selected = event.target.value; setFormat(selected); updateJobs(current => current.map(job => job.descriptor.category !== "unsupported" && viewAccepts(view, job.descriptor) && optionsForMode(job.descriptor, availableFormats, serverCapabilities, view).includes(selected) ? { ...job, settings: { ...job.settings, output: selected } } : job)); }} disabled={busy}>{shownOptions.map(item => <option key={item} value={item}>{item.toUpperCase()}{oneCategory === "pdf" && item === "docx" ? t.textOnly : ""}</option>)}</select><ChevronDown size={16} /></div></div>}
-          {(oneCategory === "image" || (oneCategory === "pdf" && format === "jpg")) && <div className="setting-field quality-field"><label htmlFor="quality">{t.quality} <span>{quality}%</span></label><input id="quality" type="range" min="1" max="100" value={quality} onChange={event => setQuality(Number(event.target.value))} disabled={busy || format === "png" || format === "pdf"} /><small>{format === "png" || format === "pdf" ? t.pngQuality : t.otherQuality}</small></div>}
-          {oneCategory === "image" && format !== "pdf" && <div className="settings-extra"><div className="setting-field"><label htmlFor="width">{t.width}</label><input id="width" type="number" min="0" max="12000" value={width || ""} placeholder={t.original} onChange={event => setWidth(Number(event.target.value) || 0)} disabled={busy} /></div><div className="setting-field"><label htmlFor="height">{t.height}</label><input id="height" type="number" min="0" max="12000" value={height || ""} placeholder={t.original} onChange={event => setHeight(Number(event.target.value) || 0)} disabled={busy} /></div><small>{t.resizeHint}</small></div>}
-          {oneCategory === "image" && format !== "pdf" && <div className="settings-extra"><div className="setting-field"><label htmlFor="metadata">{t.metadata}</label><select id="metadata" value={keepMetadata ? "keep" : "remove"} onChange={event => setKeepMetadata(event.target.value === "keep")} disabled={busy || !serverCapabilities}><option value="remove">{t.removeMetadata}</option>{serverCapabilities && <option value="keep">{t.keepMetadata}</option>}</select></div></div>}
-          {oneCategory === "pdf" && view !== "word" && <div className="settings-extra"><div className="setting-field"><label htmlFor="pdf-operation">{t.pdfAction}</label><select id="pdf-operation" value={pdfOperation} onChange={event => { const next = event.target.value; setPdfOperation(next); if (next !== "convert") { setFormat("pdf"); updateJobs(current => current.map(job => job.descriptor.category === "pdf" ? { ...job, settings: { ...job.settings, output: "pdf" } } : job)); } else { setFormat("png"); updateJobs(current => current.map(job => job.descriptor.category === "pdf" ? { ...job, settings: { ...job.settings, output: "png" } } : job)); } }} disabled={busy}><option value="convert">{t.pdfConvert}</option><option value="split">{t.pdfSplit}</option><option value="rotate">{t.pdfRotate}</option><option value="compress">{t.pdfCompress}</option>{supported.length > 1 && <option value="merge">{t.pdfMerge}</option>}</select></div>{pdfOperation !== "merge" && <div className="setting-field"><label htmlFor="pages">{t.pages}</label><input id="pages" value={pages} onChange={event => setPages(event.target.value)} placeholder={pdfOperation === "split" ? "all / 1-3;4-6" : "all / 1-3,5"} disabled={busy} /></div>}{pdfOperation === "convert" && (format === "png" || format === "jpg") && <div className="setting-field"><label htmlFor="dpi">DPI</label><select id="dpi" value={dpi} onChange={event => setDpi(Number(event.target.value))} disabled={busy}>{[72, 144, 216, 300].map(value => <option key={value}>{value}</option>)}</select></div>}{pdfOperation === "rotate" && <div className="setting-field"><label htmlFor="rotation">{t.rotation}</label><select id="rotation" value={rotation} onChange={event => setRotation(Number(event.target.value))} disabled={busy}>{[90, 180, 270].map(value => <option key={value}>{value}°</option>)}</select></div>}</div>}
-          {(oneCategory === "audio" || oneCategory === "video") && <div className="settings-extra"><div className="setting-field"><label htmlFor="bitrate">{t.audioBitrate}</label><select id="bitrate" value={bitrate} onChange={event => setBitrate(Number(event.target.value))} disabled={busy}>{[96,128,192,256,320].map(value => <option key={value} value={value}>{value} kbps</option>)}</select></div>{oneCategory === "audio" && <div className="setting-field"><label htmlFor="sample-rate">{t.sampleRate}</label><select id="sample-rate" value={sampleRate} onChange={event => setSampleRate(Number(event.target.value))} disabled={busy}><option value="0">{t.original}</option><option value="44100">44100 Hz</option><option value="48000">48000 Hz</option></select></div>}{oneCategory === "video" && <><div className="setting-field"><label htmlFor="resolution">{t.resolution}</label><select id="resolution" value={resolution} onChange={event => setResolution(Number(event.target.value))} disabled={busy}><option value="0">{t.original}</option>{[2160,1440,1080,720,480].map(value => <option key={value} value={value}>{value}p</option>)}</select></div><div className="setting-field"><label htmlFor="fps">FPS</label><select id="fps" value={fps} onChange={event => setFps(Number(event.target.value))} disabled={busy}><option value="0">{t.original}</option>{[60,30,24].map(value => <option key={value} value={value}>{value}</option>)}</select></div><div className="setting-field"><label htmlFor="video-quality">{t.quality}</label><select id="video-quality" value={videoQuality} onChange={event => setVideoQuality(event.target.value)} disabled={busy}><option value="very_high">{t.veryHigh}</option><option value="high">{t.high}</option><option value="medium">{t.medium}</option><option value="low">{t.low}</option></select></div></>}</div>}
-          {oneCategory === "image" && format === "pdf" && <div className="settings-extra"><div className="setting-field"><label htmlFor="page-size">{t.pageSize}</label><select id="page-size" value={pageSize} onChange={event => setPageSize(event.target.value)} disabled={busy}><option value="auto">{t.auto}</option><option value="a4">A4</option><option value="letter">Letter</option></select></div><div className="setting-field"><label htmlFor="orientation">{t.orientation}</label><select id="orientation" value={orientation} onChange={event => setOrientation(event.target.value)} disabled={busy}><option value="auto">{t.auto}</option><option value="portrait">{t.portrait}</option><option value="landscape">{t.landscape}</option></select></div><div className="setting-field"><label htmlFor="margin">{t.margin}</label><select id="margin" value={margin} onChange={event => setMargin(event.target.value)} disabled={busy}><option value="none">{t.none}</option><option value="small">{t.small}</option><option value="medium">{t.medium}</option><option value="large">{t.large}</option></select></div></div>}
+          {(oneCategory === "image" || (oneCategory === "pdf" && format === "jpg")) && <QualitySettings language={language} quality={quality} format={format} busy={busy} onQuality={setQuality} />}
+          {oneCategory === "image" && <ImageSettings language={language} format={format} width={width} height={height} keepMetadata={keepMetadata} serverAvailable={!!serverCapabilities} busy={busy} pageSize={pageSize} orientation={orientation} margin={margin} onWidth={setWidth} onHeight={setHeight} onMetadata={setKeepMetadata} onPageSize={setPageSize} onOrientation={setOrientation} onMargin={setMargin} />}
+          {oneCategory === "pdf" && view !== "word" && <PdfSettings language={language} operation={pdfOperation} format={format} pages={pages} dpi={dpi} rotation={rotation} supportedCount={supported.length} busy={busy} onOperation={next => { setPdfOperation(next); const output = next === "convert" ? "png" : "pdf"; setFormat(output); updateJobs(current => current.map(job => job.descriptor.category === "pdf" ? { ...job, settings: { ...job.settings, output } } : job)); }} onPages={setPages} onDpi={setDpi} onRotation={setRotation} />}
+          {(oneCategory === "audio" || oneCategory === "video") && <MediaSettings language={language} category={oneCategory} bitrate={bitrate} sampleRate={sampleRate} resolution={resolution} fps={fps} videoQuality={videoQuality} busy={busy} onBitrate={setBitrate} onSampleRate={setSampleRate} onResolution={setResolution} onFps={setFps} onVideoQuality={setVideoQuality} />}
         </div>
         {noticeText && <p className="notice" role="status"><CircleAlert size={16} />{noticeText}</p>}
-        <div className="file-list" role="list">{visibleJobs.map(job => <div className="file-row" role="listitem" key={job.id}>
-          <div className={`file-icon ${job.status === "FAILED" ? "file-icon-error" : ""}`}>{job.descriptor.category === "video" ? <Film size={21} /> : job.descriptor.category === "audio" ? <Music2 size={21} /> : job.descriptor.category === "office" || job.descriptor.category === "pdf" ? <FileText size={21} /> : <FileImage size={21} strokeWidth={1.7} />}</div>
-          <div className="file-main"><div className="file-name" title={job.file.name}>{job.file.name}</div><div className="file-sub">{job.file.size ? humanSize(job.file.size) : t.groupResult} <span>·</span> {job.descriptor.detectedType.toUpperCase()} <span>·</span> {(job.output || !job.serverId && canUseLocal(job.descriptor, { ...job.settings, width, height }, job.file.size, keepMetadata)) ? t.localShort : t.serverShort}{job.status === "COMPLETED" && job.outputName ? <> <span>→</span> {job.outputName.split(".").pop()?.toUpperCase()} <span>·</span> {humanSize(job.outputSize ?? job.output?.size ?? 0)}{job.file.size > 0 ? <> <span>·</span> {t.sizeChange(Math.round((1 - (job.outputSize ?? job.output?.size ?? 0) / job.file.size) * 100))}</> : null}</> : null}</div>{job.error && <div className="file-error">{localizeError(job.error, language, job.errorCode)}</div>}</div>
-          {job.descriptor.category !== "unsupported" && job.status !== "COMPLETED" && shownOptions.length === 0 && (pdfOperation === "convert" || view === "word") && <select className="row-target" aria-label={`${job.file.name} ${t.convertTo}`} value={job.settings.output} onChange={event => patchJob(job.id, { settings: { ...job.settings, output: event.target.value } })} disabled={busy}>{optionsForMode(job.descriptor, availableFormats, serverCapabilities, view).map(item => <option key={item} value={item}>{item.toUpperCase()}</option>)}</select>}
-          <div className={`status-pill status-${job.status.toLowerCase()}`}>{job.status === "COMPLETED" && !isStale(job, effectiveControls, view) && <Check size={13} />}{job.status === "FAILED" && <CircleAlert size={13} />}{job.stage === "uploading" && job.status === "QUEUED" ? t.uploading : job.status === "PROCESSING" ? job.progress != null ? `${Math.round(job.progress * 100)}%` : job.stage === "encoding" ? t.encoding : job.stage === "decoding" ? t.decoding : t.processing : isStale(job, effectiveControls, view) ? t.settingsChanged : t.status[job.status]}</div>
-          <div className="row-actions">{groupKind && job.file.size > 0 && <><button className="icon-button" title={t.moveUp} aria-label={`${t.moveUp} ${job.file.name}`} onClick={() => moveJob(job.id, -1)} disabled={busy || visibleJobs[0]?.id === job.id}><ArrowUp size={15} /></button><button className="icon-button" title={t.moveDown} aria-label={`${t.moveDown} ${job.file.name}`} onClick={() => moveJob(job.id, 1)} disabled={busy || visibleJobs[visibleJobs.length - 1]?.id === job.id}><ArrowDown size={15} /></button></>}{job.outputName && (job.output || job.serverId) && <button className="icon-button" title={isStale(job, effectiveControls, view) || job.status !== "COMPLETED" ? t.downloadOld : t.download} aria-label={`${isStale(job, effectiveControls, view) || job.status !== "COMPLETED" ? t.downloadOld : t.download} ${job.outputName}`} onClick={() => job.serverId ? downloadServerJob(job.serverId) : job.output && downloadBlob(job.output, job.outputName!)}><ArrowDownToLine size={18} /></button>}{isStale(job, effectiveControls, view) && <button className="text-button" onClick={() => void runBatch(job.id)} disabled={busy}>{t.reconvert}</button>}{(job.status === "QUEUED" || (job.status === "PROCESSING" && (job.stage === "uploading" || isLocal(job.descriptor.detectedType, job.settings.output)))) && <button className="icon-button" title={t.cancel} aria-label={`${t.cancel} ${job.file.name}`} onClick={() => cancelJob(job.id)}><X size={18} /></button>}{(job.status === "FAILED" || job.status === "CANCELLED") && job.descriptor.category !== "unsupported" && <button className="icon-button" title={t.retry} aria-label={`${t.retry} ${job.file.name}`} onClick={() => void runBatch(job.id)}><RotateCcw size={17} /></button>}{!(job.serverId && job.status === "PROCESSING") && <button className="icon-button muted-action" title={t.remove} aria-label={`${t.remove} ${job.file.name}`} onClick={() => removeJob(job.id)}><Trash2 size={17} /></button>}</div>
-        </div>)}</div>
-        <div className="workspace-footer"><div className="progress-side">{busy ? <><div className="progress-label"><span>{t.convertProgress}</span><strong>{settled} / {supported.length}</strong></div><div className="progress-track" role="progressbar" aria-valuenow={settled} aria-valuemin={0} aria-valuemax={supported.length}><div style={{ width: `${supported.length ? (settled / supported.length) * 100 : 0}%` }} /></div></> : completed.length ? <div className="summary"><Check size={16} /> {t.completeSummary(completed.length)}{failed.filter(job => job.descriptor.category !== "unsupported").length ? ` · ${t.failedSummary(failed.filter(job => job.descriptor.category !== "unsupported").length)}` : ""}</div> : <div className="summary-sub">{supported.length ? t.ready : t.addSupported}</div>}</div><div className="footer-actions">{canZip && <button className="secondary-button" onClick={() => { void downloadZip(completed.filter(job => job.output && job.outputName).map(job => ({ name: job.outputName!, blob: job.output! }))).catch(() => setNotice({ type: "zip" })); }}><ArrowDownToLine size={17} /> {t.downloadAll}</button>}{completed.length > 1 && completed.every(job => job.output) && !canZip && <span className="zip-note">{t.zipLimit}</span>}{groupKind ? <button className="primary-button" disabled={busy} onClick={() => void runGroup(groupKind)}>{groupKind === "merge" ? t.pdfMerge : t.imagesToPdf}<ArrowRight size={17} /></button> : (pendingCount > 0 || busy) && <button className="primary-button" disabled={busy || !pendingCount} onClick={() => void runBatch()}>{busy ? t.converting : staleCount === pendingCount ? t.reconvert : completed.length ? t.convertRemaining : t.convertFiles}<ArrowRight size={17} /></button>}</div></div>
+        <FileList>{visibleJobs.map((job, index) => <FileRow key={job.id} job={job} language={language} view={view} controls={effectiveControls}
+          options={optionsForMode(job.descriptor, availableFormats, serverCapabilities, view)}
+          showTarget={job.descriptor.category !== "unsupported" && job.status !== "COMPLETED" && shownOptions.length === 0 && (pdfOperation === "convert" || view === "word")}
+          local={canUseLocal(job.descriptor, { ...job.settings, width, height }, job.file.size, keepMetadata)} busy={busy} groupKind={groupKind}
+          isFirst={index === 0} isLast={index === visibleJobs.length - 1}
+          onTarget={output => patchJob(job.id, { settings: { ...job.settings, output } })}
+          onMove={direction => moveJob(job.id, direction)} onReconvert={() => void runBatch(job.id)}
+          onCancel={() => cancelJob(job.id)} onRetry={() => void runBatch(job.id)} onRemove={() => removeJob(job.id)} />)}</FileList>
+        <WorkspaceFooter language={language} busy={busy} settled={settled} supportedCount={supported.length} completed={completed}
+          failedCount={failed.filter(job => job.descriptor.category !== "unsupported").length} canZip={canZip} groupKind={groupKind}
+          pendingCount={pendingCount} staleCount={staleCount} onBatch={() => void runBatch()} onGroup={kind => void runGroup(kind)}
+          onZipError={() => setNotice({ type: "zip" })} />
       </section>}
       {showDebug && <section className="debug-metrics"><h2>Debug metrics</h2>{debugMetrics ? <pre>{JSON.stringify({ file: debugMetrics.name, ...debugMetrics.metrics, peakMemory: "unavailable" }, null, 2)}</pre> : <p>Run a local image conversion to collect timing data.</p>}</section>}
       </>}
       {activeView === "history" && <HistoryPanel entries={history} language={language} onClear={() => { void clearHistory().then(() => setHistory([])).catch(() => {}); }} onReuse={entry => { const s = entry.settings; if (typeof s.quality === "number") setQuality(s.quality); if (typeof s.width === "number") setWidth(s.width); if (typeof s.height === "number") setHeight(s.height); if (typeof s.keep_metadata === "boolean") setKeepMetadata(s.keep_metadata); if (typeof s.bitrate === "number") setBitrate(s.bitrate); if (typeof s.resolution === "number") setResolution(s.resolution); if (typeof s.fps === "number") setFps(s.fps); if (typeof s.video_quality === "string") setVideoQuality(s.video_quality); selectView("all"); setFormat(entry.outputFormat); updateJobs(current => current.map(job => optionsFor(job.descriptor, availableFormats, serverCapabilities).includes(entry.outputFormat) ? { ...job, settings: { ...job.settings, output: entry.outputFormat } } : job)); }} />}
       {activeView === "about" && <section id="about" className="about-section glass"><h2>{t.aboutTitle}</h2><p>{t.aboutText}</p><p>{t.aboutLimits}</p><a href="https://github.com/Sver0411/ConvertBox" target="_blank" rel="noopener noreferrer">GitHub ↗</a></section>}
-    </main>
-    </div>
-    {dragging && <div className="drag-overlay" aria-hidden="true"><UploadCloud size={42} /><strong>{t.dropOverlay}</strong></div>}
-  </div>;
+  </WorkspaceShell>;
 }
