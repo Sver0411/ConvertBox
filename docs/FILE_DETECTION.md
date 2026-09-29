@@ -1,7 +1,5 @@
 # File detection
 
-`detectFileType(file)` returns a `FileDescriptor` with name, extension, MIME, detected type, size, category, signature, supported conversions and an optional error. It reads the first 16 bytes via `file.slice(0, 16).arrayBuffer()`.
+`packages/file-detection/src/detect.ts` reads the start of a browser File and compares the signature to its extension and MIME type. It recognizes JPEG, PNG, WebP, GIF, BMP, PDF, ISO-BMFF images/media, Ogg, FLAC, WAV, MP3/AAC, Matroska/WebM and Office containers. ZIP-based Office documents use their filename to propose a type in the browser; the server checks actual ZIP members before processing. Detection is preliminary: full decoders still reject truncated or unsupported codec variants.
 
-Recognized signatures: JPEG `FF D8 FF`, PNG's eight-byte signature, and WebP's `RIFF....WEBP`. A known extension or known MIME that contradicts the signature is rejected. Missing extension or MIME can still be accepted when the signature is supported. A matching header is preliminary identification; the real image decoder may still reject truncated or corrupted content.
-
-The same detection logic is covered by unit tests. Future server uploads must repeat independent byte detection; browser descriptors are untrusted outside the local path.
+`apps/api/convertbox_api/detection.py` independently checks magic bytes. It inspects ZIP members for OOXML or OpenDocument markers, rejects containers with more than 10,000 entries or over 500 MB expanded size, and uses ffprobe to verify that media has the expected stream type. Filename and client MIME never authorize conversion by themselves. Malformed and mismatched files fail before queue submission.

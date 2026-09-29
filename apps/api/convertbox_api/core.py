@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 
 class JobStatus(StrEnum):
@@ -38,6 +38,9 @@ class ConversionRequest:
     input_format: str
     output_format: str
     settings: dict[str, str | int | float | bool]
+    input_paths: tuple[Path, ...] = ()
+    operation: str = "convert"
+    on_progress: Callable[[float], None] | None = None
 
 
 class Converter(Protocol):

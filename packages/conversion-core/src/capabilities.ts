@@ -17,6 +17,9 @@ export function canConvert(input: ImageFormat, output: ImageFormat): boolean {
 export function validateSettings(settings: ConversionSettings): string | null {
   if (!IMAGE_FORMATS.includes(settings.output)) return "Unsupported output format.";
   if (!Number.isInteger(settings.quality) || settings.quality < 1 || settings.quality > 100) return "Quality must be between 1 and 100.";
+  for (const value of [settings.width ?? 0, settings.height ?? 0]) {
+    if (!Number.isInteger(value) || value < 0 || value > 12000) return "Dimensions must be between 0 and 12000 pixels.";
+  }
   return null;
 }
 

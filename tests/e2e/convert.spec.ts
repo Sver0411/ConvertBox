@@ -65,3 +65,91 @@ test("language switch rewrites the full workspace in English", async ({ page }) 
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
   await expect(page.getByLabel("目标格式")).toBeVisible();
 });
+
+test("local image resize preserves aspect ratio", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("选择文件").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: png });
+  await page.getByLabel("目标格式", { exact: true }).selectOption("png");
+  await page.getByLabel("宽度（像素）").fill("8");
+  await page.getByRole("button", { name: "开始转换" }).click();
+  await expect(page.locator(".summary")).toContainText("1 个已完成");
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下载 sample.png" }).click();
+  const bytes = await readFile(await (await pending).path());
+  expect(bytes.readUInt32BE(16)).toBe(8);
+  expect(bytes.readUInt32BE(20)).toBe(8);
+});
+
+test("PDF to PNG and Word to PDF run on the server", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("选择文件").setInputFiles({ name: "sample.pdf", mimeType: "application/pdf", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.pdf")) });
+  await expect(page.getByText("需要服务器处理", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "开始转换" }).click();
+  await expect(page.locator(".summary")).toContainText("1 个已完成", { timeout: 20000 });
+  const pdfDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下载 sample.zip" }).click();
+  const pdfZip = unzipSync(new Uint8Array(await readFile(await (await pdfDownload).path())));
+  expect(Array.from(pdfZip["page_1.png"].slice(0, 8))).toEqual([137,80,78,71,13,10,26,10]);
+  await page.getByRole("button", { name: "添加文件" }).click();
+  await page.getByLabel("选择文件").setInputFiles({ name: "sample.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.docx")) });
+  await page.getByRole("button", { name: "转换剩余文件" }).click();
+  await expect(page.locator(".summary")).toContainText("2 个已完成", { timeout: 20000 });
+  const officeDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下载 sample.pdf" }).click();
+  const officeBytes = await readFile(await (await officeDownload).path());
+  expect(officeBytes.toString("ascii", 0, 5)).toBe("%PDF-");
+});
+
+test("audio and video produce real MP3 output", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("选择文件").setInputFiles({ name: "sample.wav", mimeType: "audio/wav", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.wav")) });
+  await page.getByRole("button", { name: "开始转换" }).click();
+  await expect(page.locator(".summary")).toContainText("1 个已完成", { timeout: 20000 });
+  const audioDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下载 sample.mp3" }).click();
+  const audio = await readFile(await (await audioDownload).path());
+  expect(audio.toString("ascii", 0, 3)).toBe("ID3");
+  await page.getByRole("button", { name: "添加文件" }).click();
+  await page.getByLabel("选择文件").setInputFiles({ name: "sample.mp4", mimeType: "video/mp4", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.mp4")) });
+  await page.getByRole("button", { name: "转换剩余文件" }).click();
+  await expect(page.locator(".summary")).toContainText("2 个已完成", { timeout: 20000 });
+  const videoDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下载 sample.mp3" }).last().click();
+  const extracted = await readFile(await (await videoDownload).path());
+  expect(extracted.toString("ascii", 0, 3)).toBe("ID3");
+});
+
+test("preset, history and dark theme work together", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("主题").selectOption("dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByLabel("选择文件").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: png });
+  await page.getByLabel("预设").selectOption("web-image");
+  await expect(page.getByLabel("目标格式", { exact: true })).toHaveValue("jpg");
+  await expect(page.getByLabel("宽度（像素）")).toHaveValue("1920");
+  await page.getByRole("button", { name: "开始转换" }).click();
+  await expect(page.locator(".summary")).toContainText("1 个已完成");
+  await expect(page.locator(".history-row")).toContainText("PNG → JPG");
+  await page.reload();
+  await expect(page.locator(".history-row")).toContainText("PNG → JPG");
+  await page.getByRole("button", { name: "清空记录" }).click();
+  await expect(page.getByText("暂无记录")).toBeVisible();
+});
+
+test("image order controls the pages of a combined PDF", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("选择文件").setInputFiles([
+    { name: "first.png", mimeType: "image/png", buffer: png },
+    { name: "second.jpg", mimeType: "image/jpeg", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.jpg")) },
+  ]);
+  await page.getByLabel("目标格式", { exact: true }).selectOption("pdf");
+  await page.getByRole("button", { name: "上移 second.jpg" }).click();
+  await expect(page.locator(".file-row .file-name").first()).toHaveText("second.jpg");
+  await page.getByLabel("页面尺寸").selectOption("a4");
+  await page.getByRole("button", { name: "合并为 PDF" }).click();
+  await expect(page.locator(".summary")).toContainText("1 个已完成", { timeout: 20000 });
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: "下载 images.pdf" }).click();
+  const bytes = await readFile(await (await pending).path());
+  expect(bytes.toString("ascii", 0, 5)).toBe("%PDF-");
+});

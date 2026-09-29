@@ -1,6 +1,6 @@
 export type ImageFormat = "jpg" | "png" | "webp";
-export type FileCategory = "image" | "unsupported";
-export type Signature = ImageFormat | "unknown";
+export type FileCategory = "image" | "pdf" | "office" | "audio" | "video" | "unsupported";
+export type Signature = string;
 
 export interface FileDescriptor {
   name: string;
@@ -10,23 +10,36 @@ export interface FileDescriptor {
   size: number;
   category: FileCategory;
   signature: Signature;
-  supportedConversions: ImageFormat[];
+  supportedConversions: string[];
   error?: string;
 }
 
 export type JobStatus = "CREATED" | "VALIDATING" | "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED" | "CANCELLED";
-export type ConversionStage = "queued" | "decoding" | "encoding" | "completed";
+export type ConversionStage = "queued" | "uploading" | "processing" | "decoding" | "encoding" | "completed";
 
 export interface ConversionSettings {
   output: ImageFormat;
   quality: number;
+  width?: number;
+  height?: number;
+}
+
+export interface JobSettings {
+  output: string;
+  quality: number;
+  width?: number;
+  height?: number;
+  pages?: string;
+  dpi?: number;
+  rotation?: number;
+  bitrate?: number;
 }
 
 export interface ConversionJob {
   id: string;
   file: File;
   descriptor: FileDescriptor;
-  settings: ConversionSettings;
+  settings: JobSettings;
   status: JobStatus;
   stage: ConversionStage;
   createdAt: number;
@@ -35,4 +48,7 @@ export interface ConversionJob {
   error?: string;
   output?: Blob;
   outputName?: string;
+  outputSize?: number;
+  serverId?: string;
+  progress?: number | null;
 }

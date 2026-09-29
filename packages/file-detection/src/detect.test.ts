@@ -27,4 +27,10 @@ describe("file detection", () => {
     expect(descriptor.category).toBe("image");
     expect(descriptor.supportedConversions).toEqual(["jpg", "png", "webp"]);
   });
+  it("accepts HEIF as a HEIC-family alias", async () => {
+    const bytes = new Uint8Array([0,0,0,20,102,116,121,112,104,101,105,99,0,0,0,0]);
+    const descriptor = await detectFileType(new File([bytes], "photo.heif", { type: "image/heif" }));
+    expect(descriptor.category).toBe("image");
+    expect(descriptor.detectedType).toBe("heic");
+  });
 });

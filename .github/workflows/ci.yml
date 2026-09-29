@@ -11,7 +11,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install uv
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg libreoffice-writer libreoffice-calc libreoffice-impress fonts-liberation
       - run: npm ci
+      - run: uv sync --project apps/api --extra test
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test
@@ -25,5 +31,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg libreoffice-writer libreoffice-calc libreoffice-impress fonts-liberation
       - run: python -m pip install -e './apps/api[test]'
-      - run: pytest apps/api/tests
+      - run: cd apps/api && python -m pytest tests

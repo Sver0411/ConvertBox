@@ -1,19 +1,17 @@
 # Architecture
 
-## Running code
+## Runtime boundaries
 
-`apps/web/src/components/workspace.tsx` owns the browser job list, drag/drop, two-worker scheduling, settings and result actions. It delegates detection to `packages/file-detection/src/detect.ts`, capability checks to `packages/conversion-core`, and conversion to `apps/web/src/lib/image-converter.ts`. The converter chooses `apps/web/src/workers/image.worker.ts` when Worker, OffscreenCanvas and createImageBitmap are available; otherwise it uses the main-thread Canvas fallback. Outputs are Blobs. `apps/web/src/lib/download.ts` handles individual files and bounded ZIP generation.
+The Next.js page in `apps/web/src/components/workspace.tsx` handles file selection, format-specific settings, two-at-a-time browser orchestration, visible job state and downloads. `packages/file-detection` checks client signatures; `packages/conversion-core` owns local image capability and validation. `apps/web/src/lib/image-converter.ts` runs a Web Worker with OffscreenCanvas and createImageBitmap where available, otherwise a Canvas fallback. The web app fetches `/capabilities` and merges tested browser outputs with server-advertised formats.
 
-`apps/api` is a separate FastAPI package. In Phase 1 it exposes `/health` and `/capabilities`, whose server list is empty. It has a Python `Converter` protocol, registry and job transition model for later server converters. There is no upload route or server queue yet because the only implemented conversions are local. The browser does not call this API.
+Next.js rewrites same-origin `/api/*` to FastAPI. `apps/api/convertbox_api/main.py` streams uploads in 1 MB pieces into random per-job directories, detects their contents again, then enqueues a job. `jobs.py` owns a bounded in-process queue, two worker threads, a one-at-a-time video semaphore and TTL cleanup. `core.py` defines the Converter protocol and registry; `converters.py` holds image, PDF, Office and media implementations. `capabilities.py` advertises server outputs according to installed encoders and tools.
 
-## Boundary
+## Deployment model
 
-The TypeScript capability matrix is the single source for active image options. The eventual API server capability response will list registered, healthy server converters; the UI will merge it with local capabilities only when server conversion is implemented. Client MIME and file extensions are never enough to establish a server capability.
+The worker threads share the API process and local temporary directory. Run one API instance. Queue state does not survive process restarts. A multi-instance deployment requires shared job records, queue and object storage before horizontal scaling. This is the replacement boundary for Redis/RQ, rather than a claim that those systems already exist.
 
-## Deployment
+Docker Compose starts web and API containers. API bundles FFmpeg and LibreOffice. `API_INTERNAL_URL` controls the web-to-API rewrite at build time. The API exposes health and capabilities endpoints; no conversion SaaS is used.
 
-Docker Compose starts the Next.js web container and the FastAPI boundary container. The browser Worker is bundled into the web app and runs in each visitor's browser. No separate server worker container is claimed for Phase 1.
+## Limits
 
-## Future server path
-
-HTTP upload adapter → Job Manager → Conversion Queue → Worker → Converter Registry → Converter. The upload adapter will stream into a random job directory. The queue interface will support a later Redis/RQ adapter without changing the converter protocol. A job event endpoint can report actual FFmpeg `out_time` against probed duration. Server jobs need TTL cleanup and persistent state before any upload UI appears.
+The browser handles local JPG/PNG/WebP up to 25 MB and 80 megapixels. The server defaults to 1 GB per upload request, 32 queued jobs, two workers, one video slot and a one-hour file TTL. Values that are configurable are in `.env.example`. The browser batch limit is 100 items. Media conversion has a ten-minute watchdog; Office conversion has a two-minute subprocess timeout. External container CPU/memory and reverse-proxy limits remain a deployment responsibility.

@@ -1,5 +1,7 @@
 # Privacy
 
-All Phase 1 image conversions run in the visitor's browser. There is no upload endpoint in the web flow. The image File and converted Blob are kept only by the open page, and are released on removal or page close. A download URL is revoked after 30 seconds. The site does not store history or images in IndexedDB. It does not load a remote font service.
+Each file row shows Local or Server before conversion. JPG/PNG/WebP conversion at or below 25 MB stays in the browser when the chosen output is one of those formats. Browser data is held only while the page is open; local downloads use temporary object URLs.
 
-The web host still receives normal website requests (HTML, JavaScript, CSS and assets). Hosting providers may log those requests. This does not include image contents. Future features requiring server processing must display a Server label before upload, use short-lived temporary files and explain retention.
+Server tasks upload files to a self-hosted FastAPI instance through the same-origin web proxy. Each upload and result resides in a random per-job directory. Completed or failed jobs are deleted after the configured TTL, one hour by default. Server downloads and request metadata may appear in hosting/proxy logs, depending on deployment. No conversion SaaS is used.
+
+IndexedDB stores only recent conversion metadata and settings, capped at 200 entries. It never stores source or output Blobs. Users can clear the history in the interface. Custom presets stay in localStorage on that browser. No account is required.
