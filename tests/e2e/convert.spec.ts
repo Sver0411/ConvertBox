@@ -129,6 +129,7 @@ test("preset, history and dark theme work together", async ({ page }) => {
   await expect(page.getByLabel("宽度（像素）")).toHaveValue("1920");
   await page.getByRole("button", { name: "开始转换" }).click();
   await expect(page.locator(".summary")).toContainText("1 个已完成");
+  await page.getByRole("button", { name: "记录" }).click();
   await expect(page.locator(".history-row")).toContainText("PNG → JPG");
   await page.reload();
   await expect(page.locator(".history-row")).toContainText("PNG → JPG");
@@ -152,4 +153,38 @@ test("image order controls the pages of a combined PDF", async ({ page }) => {
   await page.getByRole("button", { name: "下载 images.pdf" }).click();
   const bytes = await readFile(await (await pending).path());
   expect(bytes.toString("ascii", 0, 5)).toBe("%PDF-");
+});
+
+test("sidebar opens focused Word and PDF workspaces without page scrolling", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /^Word/ }).click();
+  await expect(page.getByRole("heading", { name: "Word 转换" })).toBeVisible();
+  await expect(page).toHaveURL(/tool=word/);
+  await page.getByLabel("选择文件").setInputFiles({ name: "sample.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.docx")) });
+  await expect(page.getByLabel("目标格式", { exact: true })).toHaveValue("pdf");
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 2)).toBe(true);
+  await page.getByRole("button", { name: "PDF", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "PDF 转换" })).toBeVisible();
+  await page.getByRole("button", { name: "记录" }).click();
+  await expect(page.getByRole("heading", { name: "历史记录" })).toBeVisible();
+  await page.getByRole("button", { name: "说明" }).click();
+  await expect(page.getByRole("heading", { name: "关于 ConvertBox" })).toBeVisible();
+});
+
+test("Word workspace exposes PDF to DOCX and keeps other queued files separate", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /^Word/ }).click();
+  await page.getByLabel("选择文件").setInputFiles({ name: "sample.pdf", mimeType: "application/pdf", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.pdf")) });
+  await expect(page.getByLabel("目标格式", { exact: true })).toHaveValue("docx");
+  await page.getByRole("button", { name: "图片" }).click();
+  await page.getByLabel("选择文件").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: png });
+  await expect(page.locator(".file-row")).toHaveCount(1);
+  await page.getByRole("button", { name: /^Word/ }).click();
+  await expect(page.locator(".file-row")).toHaveCount(1);
+  await expect(page.locator(".file-name")).toHaveText("sample.pdf");
+  await page.getByRole("button", { name: "开始转换" }).click();
+  await expect(page.locator(".summary")).toContainText("1 个已完成", { timeout: 20000 });
+  await page.getByRole("button", { name: "图片" }).click();
+  await expect(page.locator(".file-name")).toHaveText("sample.png");
+  await expect(page.locator(".status-pill")).toContainText("待转换");
 });

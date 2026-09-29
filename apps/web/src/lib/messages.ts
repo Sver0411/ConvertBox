@@ -4,6 +4,9 @@ export type Language = "zh" | "en";
 
 export const copy = {
   zh: {
+    views: { all: "全部转换", image: "图片", pdf: "PDF", word: "Word", audio: "音频", video: "视频", history: "记录", about: "说明" },
+    viewTitles: { all: "文件转换", image: "图片转换", pdf: "PDF 转换", word: "Word 转换", audio: "音频转换", video: "视频转换" },
+    viewHelp: { all: "图片、PDF、文档、音频与视频", image: "JPG、PNG、WebP、HEIC、AVIF 等", pdf: "PDF 与图片", word: "DOC、DOCX、ODT 或 PDF", audio: "音频文件，或从视频提取音频", video: "MP4、MOV、MKV、WebM、AVI" },
     convert: "转换", history: "历史", about: "说明", theme: "主题", themeLight: "浅色", themeDark: "深色", themeSystem: "系统", localBadge: "本地处理", serverBadge: "含服务器处理", heroTitle: "文件转换", heroSub: "图片、PDF、Office、音频与视频。处理位置会在转换前标明。",
     dropTitle: "拖入文件", dropSub: "或从设备中选择", chooseFiles: "选择文件", workspace: "工作区", yourFiles: "文件",
     addFiles: "添加文件", readyCount: (n: number) => `${n} 个待转换`, completeCount: (n: number) => `${n} 个已完成`,
@@ -21,13 +24,16 @@ export const copy = {
     partial: (n: number) => `本次仅添加前 ${n} 个文件（总上限 100 个）。`, zipError: "无法生成 ZIP，请逐个下载。", serverUnavailable: "服务器转换暂时不可用，请稍后重试。",
     width: "宽度（像素）", height: "高度（像素）", original: "原尺寸", resizeHint: "只填一项时保持比例；两项都填时等比放入指定尺寸。", metadata: "元数据", removeMetadata: "移除", keepMetadata: "保留 EXIF / 色彩配置（服务器）", preset: "预设", choosePreset: "选择预设", savePreset: "保存当前设置", deletePreset: "删除预设", presetName: "预设名称", save: "保存", moveUp: "上移", moveDown: "下移", localShort: "本地", serverShort: "服务器", sizeChange: (percent: number) => percent >= 0 ? `缩小 ${percent}%` : `增大 ${-percent}%`,
     pdfAction: "PDF 操作", pdfConvert: "转换格式", pdfSplit: "拆分页面", pdfRotate: "旋转页面", pdfCompress: "优化文件", pdfMerge: "合并 PDF", imagesToPdf: "合并为 PDF", pages: "页码", rotation: "旋转角度", pageSize: "页面尺寸", orientation: "方向", margin: "边距", auto: "自动", portrait: "纵向", landscape: "横向", none: "无", small: "小", medium: "中", large: "大", audioBitrate: "音频码率", sampleRate: "采样率", resolution: "分辨率", veryHigh: "极高", high: "高", low: "低", textOnly: "（仅文本）", groupResult: "合并结果", uploading: "上传中", processing: "处理中",
-    errorSignature: "无法识别文件内容或该格式暂不支持。", errorMismatch: "文件扩展名或类型与实际内容不一致。",
+    errorSignature: "无法识别文件内容或该格式暂不支持。", errorMismatch: "文件扩展名或类型与实际内容不一致。", errorView: "此文件不适用于当前分类，请选择对应的转换分类。",
     errorSize: "文件超出当前处理大小限制。", errorPixels: "图片像素超过 8000 万，无法安全处理。",
     errorEncode: "当前浏览器不支持此输出格式。", errorDecode: "无法解码图片。文件可能损坏，或浏览器不支持其编码。",
     errorNoText: "PDF 中没有可选择的文字；扫描件需要 OCR。", errorProtected: "暂不支持加密 PDF。", errorServer: "服务器处理失败，请检查文件后重试。", errorRange: "页码范围不在文件页数内。", errorOffice: "Office 文件无法转换为 PDF。",
     errorGeneric: "转换失败，请检查文件后重试。",
   },
   en: {
+    views: { all: "All files", image: "Images", pdf: "PDF", word: "Word", audio: "Audio", video: "Video", history: "History", about: "About" },
+    viewTitles: { all: "File conversion", image: "Image conversion", pdf: "PDF conversion", word: "Word conversion", audio: "Audio conversion", video: "Video conversion" },
+    viewHelp: { all: "Images, PDF, documents, audio and video", image: "JPG, PNG, WebP, HEIC, AVIF and more", pdf: "PDF and images", word: "DOC, DOCX, ODT or PDF", audio: "Audio files, or extract audio from video", video: "MP4, MOV, MKV, WebM and AVI" },
     convert: "Convert", history: "History", about: "About", theme: "Theme", themeLight: "Light", themeDark: "Dark", themeSystem: "System", localBadge: "Local processing", serverBadge: "Server processing", heroTitle: "File conversion", heroSub: "Images, PDF, Office, audio and video. Processing location is shown before conversion.",
     dropTitle: "Drop files here", dropSub: "or choose files from your device", chooseFiles: "Choose files", workspace: "Workspace", yourFiles: "Files",
     addFiles: "Add files", readyCount: (n: number) => `${n} ready to convert`, completeCount: (n: number) => `${n} completed`,
@@ -45,7 +51,7 @@ export const copy = {
     partial: (n: number) => `Only the first ${n} files were added (100-file limit).`, zipError: "Could not create ZIP. Download files individually.", serverUnavailable: "Server conversion is unavailable. Retry later.",
     width: "Width (pixels)", height: "Height (pixels)", original: "Original", resizeHint: "One dimension preserves aspect ratio; two fit within the given size.", metadata: "Metadata", removeMetadata: "Remove", keepMetadata: "Keep EXIF / color profile (server)", preset: "Preset", choosePreset: "Choose preset", savePreset: "Save current settings", deletePreset: "Delete preset", presetName: "Preset name", save: "Save", moveUp: "Move up", moveDown: "Move down", localShort: "Local", serverShort: "Server", sizeChange: (percent: number) => percent >= 0 ? `${percent}% smaller` : `${-percent}% larger`,
     pdfAction: "PDF action", pdfConvert: "Convert format", pdfSplit: "Split pages", pdfRotate: "Rotate pages", pdfCompress: "Optimize file", pdfMerge: "Merge PDF", imagesToPdf: "Combine into PDF", pages: "Pages", rotation: "Rotation", pageSize: "Page size", orientation: "Orientation", margin: "Margin", auto: "Auto", portrait: "Portrait", landscape: "Landscape", none: "None", small: "Small", medium: "Medium", large: "Large", audioBitrate: "Audio bitrate", sampleRate: "Sample rate", resolution: "Resolution", veryHigh: "Very high", high: "High", low: "Low", textOnly: " (text only)", groupResult: "Combined result", uploading: "Uploading", processing: "Processing",
-    errorSignature: "File contents are unrecognized or unsupported.", errorMismatch: "File extension or MIME type does not match its contents.",
+    errorSignature: "File contents are unrecognized or unsupported.", errorMismatch: "File extension or MIME type does not match its contents.", errorView: "This file belongs in a different conversion category.",
     errorSize: "File exceeds the current processing limit.", errorPixels: "Image exceeds the 80-megapixel safety limit.",
     errorEncode: "This browser does not support the selected output format.", errorDecode: "This image could not be decoded. It may be damaged or use an unsupported codec.",
     errorNoText: "No selectable text was found in this PDF. Scanned pages need OCR.", errorProtected: "Encrypted PDFs are not supported yet.", errorServer: "Server processing failed. Check the file and retry.", errorRange: "Page range is outside this PDF.", errorOffice: "Office document could not be converted to PDF.",
@@ -57,6 +63,7 @@ export function localizeError(error: string, language: Language): string {
   const t = copy[language];
   if (error.startsWith("File signature") || error.startsWith("Unsupported or unrecognized")) return t.errorSignature;
   if (error.startsWith("File extension") || error.startsWith("File MIME")) return t.errorMismatch;
+  if (error.startsWith("File is not suitable")) return t.errorView;
   if (error.startsWith("File exceeds")) return t.errorSize;
   if (error.startsWith("Server converter")) return t.serverUnavailable;
   if (error.startsWith("No selectable text")) return t.errorNoText;

@@ -4,6 +4,8 @@
 
 The Next.js page in `apps/web/src/components/workspace.tsx` handles file selection, format-specific settings, two-at-a-time browser orchestration, visible job state and downloads. `packages/file-detection` checks client signatures; `packages/conversion-core` owns local image capability and validation. `apps/web/src/lib/image-converter.ts` runs a Web Worker with OffscreenCanvas and createImageBitmap where available, otherwise a Canvas fallback. The web app fetches `/capabilities` and merges tested browser outputs with server-advertised formats.
 
+`apps/web/src/lib/workspace-views.ts` maps the left sidebar's All, Image, PDF, Word, Audio and Video workspaces to accepted inputs and visible outputs. These views reuse the same job list and converters; switching views does not start or cancel a job. History and About are panels in the same desktop layout. URL query `?tool=word` (and other view keys) opens a focused workspace directly.
+
 Next.js rewrites same-origin `/api/*` to FastAPI. `apps/api/convertbox_api/main.py` streams uploads in 1 MB pieces into random per-job directories, detects their contents again, then enqueues a job. `jobs.py` owns a bounded in-process queue, two worker threads, a one-at-a-time video semaphore and TTL cleanup. `core.py` defines the Converter protocol and registry; `converters.py` holds image, PDF, Office and media implementations. `capabilities.py` advertises server outputs according to installed encoders and tools.
 
 ## Deployment model

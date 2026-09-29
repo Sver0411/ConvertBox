@@ -37,6 +37,7 @@ export interface JobSettings {
 
 export interface ConversionJob {
   id: string;
+  workspace?: string;
   file: File;
   descriptor: FileDescriptor;
   settings: JobSettings;
