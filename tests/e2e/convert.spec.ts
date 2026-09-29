@@ -60,7 +60,7 @@ test("language switch rewrites the full workspace in English", async ({ page }) 
   await expect(page.getByRole("heading", { name: "File conversion" })).toBeVisible();
   await page.getByLabel("Choose files").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: png });
   await expect(page.getByLabel("Convert to")).toBeVisible();
-  await expect(page.getByText("Processed in your browser")).toBeVisible();
+  await expect(page.getByText("Processed in your browser")).toHaveCount(0);
   await page.getByRole("button", { name: "切换为中文" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
   await expect(page.getByLabel("目标格式")).toBeVisible();
@@ -83,7 +83,7 @@ test("local image resize preserves aspect ratio", async ({ page }) => {
 test("PDF to PNG and Word to PDF run on the server", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("选择文件").setInputFiles({ name: "sample.pdf", mimeType: "application/pdf", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.pdf")) });
-  await expect(page.getByText("需要服务器处理", { exact: true })).toBeVisible();
+  await expect(page.locator(".file-row")).toContainText("服务器");
   await page.getByRole("button", { name: "开始转换" }).click();
   await expect(page.locator(".summary")).toContainText("1 个已完成", { timeout: 20000 });
   const pdfDownload = page.waitForEvent("download");
@@ -124,6 +124,8 @@ test("preset, history and dark theme work together", async ({ page }) => {
   await page.getByLabel("主题").selectOption("dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.getByLabel("选择文件").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: png });
+  await expect(page.locator(".settings-panel")).toHaveCSS("background-color", "rgb(32, 45, 61)");
+  await expect(page.locator(".setting-note")).toHaveCount(0);
   await page.getByLabel("预设").selectOption("web-image");
   await expect(page.getByLabel("目标格式", { exact: true })).toHaveValue("jpg");
   await expect(page.getByLabel("宽度（像素）")).toHaveValue("1920");
@@ -156,6 +158,7 @@ test("image order controls the pages of a combined PDF", async ({ page }) => {
 });
 
 test("sidebar opens focused Word and PDF workspaces without page scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto("/");
   await page.getByRole("button", { name: /^Word/ }).click();
   await expect(page.getByRole("heading", { name: "Word 转换" })).toBeVisible();
@@ -165,6 +168,12 @@ test("sidebar opens focused Word and PDF workspaces without page scrolling", asy
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 2)).toBe(true);
   await page.getByRole("button", { name: "PDF", exact: true }).click();
   await expect(page.getByRole("heading", { name: "PDF 转换" })).toBeVisible();
+  await page.getByLabel("选择文件").setInputFiles({ name: "sample.pdf", mimeType: "application/pdf", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.pdf")) });
+  const formatTop = await page.locator("#format").evaluate(element => element.getBoundingClientRect().top);
+  const operationTop = await page.locator("#pdf-operation").evaluate(element => element.getBoundingClientRect().top);
+  const dpiTop = await page.locator("#dpi").evaluate(element => element.getBoundingClientRect().top);
+  expect(Math.abs(formatTop - operationTop)).toBeLessThan(3);
+  expect(Math.abs(formatTop - dpiTop)).toBeLessThan(3);
   await page.getByRole("button", { name: "记录" }).click();
   await expect(page.getByRole("heading", { name: "历史记录" })).toBeVisible();
   await page.getByRole("button", { name: "说明" }).click();
