@@ -1,3 +1,5 @@
+import io
+import json
 import subprocess
 from pathlib import Path
 from zipfile import ZipFile
@@ -54,6 +56,36 @@ def test_exif_keep_and_remove(tmp_path: Path) -> None:
             assert result.getexif().get(270) == ("ConvertBox camera note" if keep else None)
 
 
+def test_alpha_orientation_and_invalid_image(tmp_path: Path) -> None:
+    source = tmp_path / "透明🌿.png"
+    Image.new("RGBA", (4, 2), (255, 0, 0, 0)).save(source)
+    assert detect_file(source, source.name) == "png"
+    output = tmp_path / "transparent.png"
+    ImageConverter().convert(request(source, output, "png", "png"))
+    with Image.open(output) as result:
+        assert result.size == (4, 2)
+        assert result.getpixel((0, 0))[3] == 0
+
+    rotated = tmp_path / "回転.jpg"
+    exif = Image.Exif()
+    exif[274] = 6
+    Image.new("RGB", (4, 2), "blue").save(rotated, "JPEG", exif=exif)
+    oriented = tmp_path / "oriented.png"
+    ImageConverter().convert(request(rotated, oriented, "jpg", "png"))
+    with Image.open(oriented) as result:
+        assert result.size == (2, 4)
+
+    corrupt = tmp_path / "broken.jpg"
+    corrupt.write_bytes(b"\xff\xd8\xff\xe0" + b"broken")
+    assert detect_file(corrupt, corrupt.name) == "jpg"
+    try:
+        ImageConverter().convert(request(corrupt, tmp_path / "bad.png", "jpg", "png"))
+    except Exception:
+        pass
+    else:
+        raise AssertionError("Corrupt JPEG was converted")
+
+
 def test_pdf_pages_rotate_compress(tmp_path: Path) -> None:
     source = tmp_path / "pages.pdf"
     with pymupdf.open() as document:
@@ -65,6 +97,8 @@ def test_pdf_pages_rotate_compress(tmp_path: Path) -> None:
     converter.convert(ConversionRequest(source, selected, "pdf", "png", {"pages": "1,3", "dpi": 72}))
     with ZipFile(selected) as archive:
         assert archive.namelist() == ["page_1.png", "page_3.png"]
+        with Image.open(io.BytesIO(archive.read("page_1.png"))) as image:
+            assert image.size == (595, 842)
     rotated = tmp_path / "rotated.pdf"
     converter.convert(ConversionRequest(source, rotated, "pdf", "pdf", {"pages": "2", "rotation": 90}, operation="rotate"))
     with pymupdf.open(rotated) as result:
@@ -127,3 +161,6 @@ def test_audio_and_video_variants(tmp_path: Path) -> None:
         converter.convert(request(source, output, source_format, target_format))
         result = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1", str(output)], capture_output=True, text=True, check=True)
         assert "duration=" in result.stdout
+        streams = subprocess.run(["ffprobe", "-v", "error", "-show_streams", "-of", "json", str(output)], capture_output=True, text=True, check=True)
+        kinds = {stream["codec_type"] for stream in json.loads(streams.stdout)["streams"]}
+        assert ("video" if source_format == "mp4" else "audio") in kinds

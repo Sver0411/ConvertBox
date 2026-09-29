@@ -207,7 +207,8 @@ export default function Workspace() {
     updateJobs(current => current.map(job => pending.some(item => item.id === job.id)
       ? { ...job, status: transitionStatus(job.status, "QUEUED"), stage: "queued", error: undefined, errorCode: undefined, progress: null }
       : job));
-    await runJobs(pending, async job => {
+    try {
+      await runJobs(pending, async job => {
         if (jobsRef.current.find(item => item.id === job.id)?.status === "CANCELLED") return;
         const controller = new AbortController();
         controllers.current.set(job.id, controller);
@@ -245,8 +246,10 @@ export default function Workspace() {
         } finally {
           controllers.current.delete(job.id);
         }
-    });
-    setBusy(false);
+      });
+    } finally {
+      setBusy(false);
+    }
   }, [activeView, busy, quality, width, height, keepMetadata, pages, dpi, rotation, bitrate, sampleRate, resolution, fps, videoQuality, pageSize, orientation, margin, pdfOperation, effectiveControls, patchJob, updateJobs, recordHistory, controllers, localScheduler, runJobs]);
 
   const runGroup = useCallback(async (kind: "merge" | "images") => {

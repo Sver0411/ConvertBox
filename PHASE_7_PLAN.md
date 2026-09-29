@@ -37,7 +37,7 @@ Already fixed and to retain: streamed 1 MB upload writes, bounded conversion que
 ### P2
 
 9. Add Chromium full E2E and a critical Firefox/WebKit suite, capability-aware WebP checks, and main-thread fallback.
-10. Add Docker build and healthcheck CI gate, readiness, and quick/extended load tests.
+10. Add readiness and quick/extended load tests. Docker build and CI gate were removed from this phase at the user's request because the development machine has insufficient memory.
 11. Split workspace UI and queue execution into focused modules without changing behavior.
 12. Update deployment, resource, security, privacy, pipeline and architecture docs, measured benchmarks, and `PHASE_7_REVIEW.md`.
 
@@ -51,8 +51,8 @@ Already fixed and to retain: streamed 1 MB upload writes, bounded conversion que
 
 ## Verification
 
-Run lint, typecheck, unit, API, production build, Chromium full E2E, Firefox/WebKit critical E2E, quick load, Compose config/build, container health/ready/web checks when Docker is available, and GitHub CI. Extended load tests remain manually invoked. Test real output dimensions/streams/pages and generated edge-case fixtures without committing large binaries. Record measured benchmark values only; mark unavailable measurements `NOT VERIFIED`.
+Run lint, typecheck, unit, API, production build, Chromium full E2E, Firefox/WebKit critical E2E, quick load, and GitHub CI. Docker build, Compose checks, and container startup are excluded by the user's later instruction; mark them `NOT VERIFIED`. Extended load tests remain manually invoked. Test real output dimensions/streams/pages and generated edge-case fixtures without committing large binaries. Record measured benchmark values only; mark unavailable measurements `NOT VERIFIED`.
 
 ## Risks and exclusions
 
-In-process queues imply one API replica. Admission inside FastAPI begins after ASGI multipart parsing; a reverse proxy must still enforce request body size and connection limits. Estimated browser memory is not actual peak RSS. Containers do not provide a kernel sandbox or hard resource isolation unless the deployment sets limits. No new format, OCR, login, cloud integration, AI, payment, new UI page, or large redesign is in scope.
+In-process queues imply one API replica. Admission middleware runs before FastAPI multipart parsing; a reverse proxy must still enforce request body size and connection limits before the app receives them. Estimated browser memory is not actual peak RSS. The application does not provide a kernel sandbox or hard resource isolation. No new format, OCR, login, cloud integration, AI, payment, new UI page, or large redesign is in scope.
