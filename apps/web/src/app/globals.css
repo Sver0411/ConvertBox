@@ -13,7 +13,6 @@ a{color:inherit;text-decoration:none}
 .site-header nav{display:flex;gap:31px;font-size:13px;font-weight:600;color:#858d96}
 .site-header nav a:hover,.site-header nav .nav-active{color:#27303a}
 .header-end{display:flex;align-items:center;gap:18px}.language-switch{border:1px solid #e1e7ef;background:rgba(255,255,255,.8);border-radius:8px;min-width:42px;height:30px;padding:0 8px;color:#556270;font-size:12px;font-weight:700}.language-switch:hover{background:#eef5ff;color:#3476df}
-.header-private{display:flex;align-items:center;gap:6px;font-size:12px;color:#7e8993;font-weight:600}
 main{position:relative;z-index:1}
 .hero{text-align:center;max-width:760px;margin:0 auto;padding:98px 20px 47px}
 .hero-compact{padding-top:54px;padding-bottom:28px}
@@ -62,7 +61,7 @@ input[type=range]{width:100%;height:5px;margin:9px 0 5px;accent-color:#3479f6;cu
 @keyframes row-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 @keyframes overlay-in{from{opacity:0}to{opacity:1}}
 @keyframes spin{to{transform:rotate(360deg)}}
-@media(max-width:760px){.site-header{margin-top:12px;width:calc(100% - 24px);padding:0 14px;height:59px}.site-header nav{gap:17px;margin-left:0}.header-private{display:none}.hero{padding:72px 24px 39px}.hero-compact{padding-top:45px;padding-bottom:27px}.hero h1{font-size:51px}.hero-copy{font-size:14px}.drop-zone{height:340px}.workspace-top{padding:22px 20px}.settings-panel{grid-template-columns:1fr 1fr;gap:15px}.setting-note{grid-column:1/-1;border-left:0;border-top:1px solid #e1e9f1;padding:13px 0 0}.workspace-footer{padding:19px 20px;align-items:stretch;flex-direction:column;gap:15px}.progress-side{max-width:none}.footer-actions{justify-content:flex-end}.site-footer{margin:0 20px}.about-section{margin:90px auto}}
+@media(max-width:760px){.site-header{margin-top:12px;width:calc(100% - 24px);padding:0 14px;height:59px}.site-header nav{gap:17px;margin-left:0}.hero{padding:72px 24px 39px}.hero-compact{padding-top:45px;padding-bottom:27px}.hero h1{font-size:51px}.hero-copy{font-size:14px}.drop-zone{height:340px}.workspace-top{padding:22px 20px}.settings-panel{grid-template-columns:1fr 1fr;gap:15px}.setting-note{grid-column:1/-1;border-left:0;border-top:1px solid #e1e9f1;padding:13px 0 0}.workspace-footer{padding:19px 20px;align-items:stretch;flex-direction:column;gap:15px}.progress-side{max-width:none}.footer-actions{justify-content:flex-end}.site-footer{margin:0 20px}.about-section{margin:90px auto}}
 @media(max-width:520px){.site-header nav{font-size:12px}.header-end{gap:0}.hero h1{font-size:45px}.hero-copy{line-height:1.6}.drop-zone{width:calc(100% - 26px)}.workspace{width:calc(100% - 20px);border-radius:19px}.settings-panel{grid-template-columns:1fr;margin:0 10px 12px}.setting-note{grid-column:auto}.settings-extra{gap:10px}.settings-extra .setting-field{flex:1;min-width:100px}.workspace-top h2{font-size:24px}.workspace-top .secondary-button{padding:0 10px}.file-list{margin:0 10px}.file-row{gap:6px;padding:10px}.file-icon{width:30px;height:30px}.file-name{max-width:100px}.status-pill{font-size:10px;padding:5px}.status-pill svg{width:13px}.row-target{max-width:64px;font-size:10px}.row-actions{gap:0}.icon-button{width:25px}.about-section{margin:80px auto 80px}.site-footer{font-size:11px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 
@@ -93,7 +92,7 @@ input[type=range]{width:100%;height:5px;margin:9px 0 5px;accent-color:#3479f6;cu
   .hero,.hero-compact{width:100%;max-width:none;flex:none;text-align:left;margin:0;padding:3px 7px 14px}
   .hero h1,.hero-compact h1{font-size:31px;letter-spacing:-.055em;line-height:1.25;margin:0 0 5px}
   .hero-copy,.hero-compact .hero-copy{display:block;max-width:none;margin:0;color:#82909f;font-size:13px;line-height:1.35}
-  .drop-zone{width:100%;height:min(480px,calc(100% - 20px));max-height:none;min-height:260px;flex:none;margin:auto 0;padding:22px;justify-content:center;border-radius:22px}
+  .drop-zone{width:100%;height:auto;max-height:none;min-height:220px;flex:1;margin:0;padding:22px;justify-content:center;border-radius:22px}
   .drop-zone h2{margin-bottom:4px}.drop-zone p{margin-bottom:18px}.formats-line{margin-top:20px;letter-spacing:.04em}
   .workspace{width:100%;height:auto;max-height:100%;min-height:0;flex:none;display:flex;flex-direction:column;margin:0;border-radius:22px}
   .workspace-top{flex:none;padding:18px 22px 12px}.workspace-top h2{font-size:22px;margin:0 0 2px}.workspace-top p{font-size:12px}
