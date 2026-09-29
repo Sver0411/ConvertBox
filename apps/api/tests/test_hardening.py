@@ -16,6 +16,8 @@ from convertbox_api import main
 from convertbox_api.admission import UploadAdmission
 from convertbox_api.jobs import Job, JobManager
 from convertbox_api import config
+from convertbox_api.detection import InvalidFile, detect_file
+from convertbox_api.core import JobStatus
 
 
 def image_bytes() -> bytes:
@@ -175,3 +177,26 @@ def test_pdf_page_limit_rejects_before_render(monkeypatch, tmp_path: Path) -> No
         assert state["status"] == "FAILED"
         assert state["errorCode"] == "PDF_LIMIT"
         assert not (tmp_path / f"job_{job_id}" / "result.zip").exists()
+
+
+def test_animated_images_are_rejected_before_conversion() -> None:
+    root = Path(__file__).resolve().parents[3] / "tests" / "fixtures"
+    for filename in ("animated.webp", "animated.png", "animated.gif"):
+        try:
+            detect_file(root / filename, filename)
+        except InvalidFile as exc:
+            assert exc.code == "ANIMATED_IMAGE_UNSUPPORTED"
+        else:
+            raise AssertionError(f"{filename} lost its animation guard")
+
+
+def test_server_status_transitions_are_enforced(tmp_path: Path) -> None:
+    job = Job(id="test", directory=tmp_path, inputs=(), input_format="png", output_format="jpg", output_name="x.jpg", output_path=tmp_path / "x.jpg", operation="convert", settings={})
+    job.transition(JobStatus.VALIDATING)
+    job.transition(JobStatus.QUEUED)
+    try:
+        job.transition(JobStatus.COMPLETED)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Illegal transition was accepted")

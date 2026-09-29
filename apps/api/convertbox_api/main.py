@@ -152,7 +152,7 @@ async def create_job(
         return job.public()
     except InvalidFile as exc:
         await asyncio.to_thread(shutil.rmtree, directory, ignore_errors=True)
-        raise ApiError(400, "INVALID_FILE", str(exc)) from exc
+        raise ApiError(400, exc.code, str(exc)) from exc
     except ConversionError as exc:
         await asyncio.to_thread(shutil.rmtree, directory, ignore_errors=True)
         code = "QUEUE_FULL" if "queue is full" in str(exc).lower() else "CONVERTER_UNAVAILABLE"

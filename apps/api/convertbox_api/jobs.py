@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .capabilities import VIDEO_INPUTS
 from .converters import ConversionError, make_registry
-from .core import ConversionRequest, JobStatus
+from .core import ConversionRequest, JobStatus, can_transition
 from . import config
 
 log = logging.getLogger(__name__)
@@ -40,6 +40,14 @@ class Job:
     error_code: str | None = None
     created_at: float = field(default_factory=time.time)
     completed_at: float | None = None
+
+    def transition(self, target: JobStatus) -> None:
+        if self.status == target:
+            return
+        if not can_transition(self.status, target):
+            log.error("Illegal job transition job_id=%s from=%s to=%s", self.id, self.status, target)
+            raise ValueError(f"Illegal job transition {self.status} → {target}")
+        self.status = target
 
     def public(self) -> dict[str, object]:
         return {
@@ -97,7 +105,9 @@ class JobManager:
 
     def submit(self, job: Job) -> None:
         with self.lock:
-            job.status = JobStatus.QUEUED
+            if job.status == JobStatus.CREATED:
+                job.transition(JobStatus.VALIDATING)
+            job.transition(JobStatus.QUEUED)
             self.jobs[job.id] = job
         try:
             self.queue.put_nowait(job.id)
@@ -118,7 +128,7 @@ class JobManager:
                 return False
             if job.status == JobStatus.PROCESSING:
                 raise ConversionError("Processing job cannot be cancelled")
-            job.status = JobStatus.CANCELLED
+            job.transition(JobStatus.EXPIRED if job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED) else JobStatus.CANCELLED)
             self.jobs.pop(job_id, None)
         shutil.rmtree(job.directory, ignore_errors=True)
         return True
@@ -129,7 +139,7 @@ class JobManager:
         with self.lock:
             for job in tuple(self.jobs.values()):
                 if job.status not in (JobStatus.PROCESSING, JobStatus.QUEUED) and now - (job.completed_at or job.created_at) >= self.ttl:
-                    job.status = JobStatus.EXPIRED
+                    job.transition(JobStatus.EXPIRED)
                     expired.append(job)
                     del self.jobs[job.id]
         for job in expired:
@@ -167,7 +177,7 @@ class JobManager:
                 self.queue.task_done()
                 continue
             with self.lock:
-                job.status = JobStatus.PROCESSING
+                job.transition(JobStatus.PROCESSING)
             try:
                 converter = self.registry.find(job.input_format, job.output_format)
                 if converter is None:
@@ -189,14 +199,14 @@ class JobManager:
                 if job.output_path.stat().st_size > config.MAX_OUTPUT_SIZE:
                     raise ConversionError("Output exceeds server size limit", "OUTPUT_TOO_LARGE")
                 with self.lock:
-                    job.status = JobStatus.COMPLETED
+                    job.transition(JobStatus.COMPLETED)
                     job.progress = 1.0
                     job.completed_at = time.time()
             except ConversionError as exc:
                 log.warning("Job %s rejected: %s", job.id, exc)
                 job.output_path.unlink(missing_ok=True)
                 with self.lock:
-                    job.status = JobStatus.FAILED
+                    job.transition(JobStatus.FAILED)
                     job.error = str(exc).split(":", 1)[0]
                     job.error_code = exc.code
                     job.completed_at = time.time()
@@ -204,7 +214,7 @@ class JobManager:
                 log.exception("Job %s failed", job.id)
                 job.output_path.unlink(missing_ok=True)
                 with self.lock:
-                    job.status = JobStatus.FAILED
+                    job.transition(JobStatus.FAILED)
                     job.error = "Server conversion failed"
                     job.error_code = "CONVERSION_FAILED"
                     job.completed_at = time.time()

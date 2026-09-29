@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canConvert, canTransition, validateSettings } from "./capabilities";
+import { canConvert, canTransition, transitionStatus, validateSettings } from "./capabilities";
 import { outputFilename, uniqueFilename } from "./filename";
 
 describe("conversion core", () => {
@@ -14,6 +14,8 @@ describe("conversion core", () => {
   it("enforces job transitions", () => {
     expect(canTransition("QUEUED", "PROCESSING")).toBe(true);
     expect(canTransition("COMPLETED", "PROCESSING")).toBe(false);
+    expect(transitionStatus("COMPLETED", "QUEUED")).toBe("QUEUED");
+    expect(() => transitionStatus("COMPLETED", "PROCESSING")).toThrow("Illegal job transition");
   });
   it("sanitizes names and resolves collisions", () => {
     expect(outputFilename("../报告:image.png", "webp")).toBe("报告_image.webp");

@@ -2,12 +2,53 @@
 
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
+from PIL import Image
 
 from .capabilities import AUDIO_INPUTS, VIDEO_INPUTS
 
 
 class InvalidFile(ValueError):
-    pass
+    def __init__(self, message: str, code: str = "INVALID_FILE") -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _reject_animation(path: Path, kind: str) -> None:
+    if kind == "gif":
+        with Image.open(path) as image:
+            if getattr(image, "n_frames", 1) > 1:
+                raise InvalidFile("Animated GIF conversion is not supported yet.", "ANIMATED_IMAGE_UNSUPPORTED")
+        return
+    if kind not in ("png", "webp"):
+        return
+    with path.open("rb") as source:
+        offset = 8 if kind == "png" else 12
+        while offset < min(path.stat().st_size, 16 * 1024 * 1024):
+            source.seek(offset)
+            header = source.read(8)
+            if len(header) < 8:
+                return
+            if kind == "png":
+                length = int.from_bytes(header[:4], "big")
+                chunk = header[4:8]
+                if chunk == b"acTL":
+                    raise InvalidFile("APNG is not supported yet.", "ANIMATED_IMAGE_UNSUPPORTED")
+                if chunk in (b"IDAT", b"IEND"):
+                    return
+                offset += 12 + length
+            else:
+                chunk = header[:4]
+                length = int.from_bytes(header[4:8], "little")
+                if chunk in (b"ANIM", b"ANMF"):
+                    raise InvalidFile("Animated WebP is not supported yet.", "ANIMATED_IMAGE_UNSUPPORTED")
+                if chunk == b"VP8X":
+                    flags = source.read(1)
+                    if not flags:
+                        raise InvalidFile("Invalid WebP container")
+                    if flags[0] & 0x02:
+                        raise InvalidFile("Animated WebP is not supported yet.", "ANIMATED_IMAGE_UNSUPPORTED")
+                offset += 8 + length + (length & 1)
+        raise InvalidFile("Image header is too large to inspect safely.")
 
 
 def detect_file(path: Path, name: str) -> str:
@@ -88,6 +129,8 @@ def detect_file(path: Path, name: str) -> str:
             raise InvalidFile("File extension does not match its contents")
     if actual in AUDIO_INPUTS + VIDEO_INPUTS:
         _verify_media(path, actual)
+    if actual in ("png", "webp", "gif"):
+        _reject_animation(path, actual)
     return actual
 
 

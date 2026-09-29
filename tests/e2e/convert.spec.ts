@@ -80,6 +80,20 @@ test("local image resize preserves aspect ratio", async ({ page }) => {
   expect(bytes.readUInt32BE(20)).toBe(8);
 });
 
+test("completed PNG keeps its old download until changed settings are reconverted", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("选择文件").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: png });
+  await page.getByLabel("目标格式", { exact: true }).selectOption("png");
+  await page.getByRole("button", { name: "开始转换" }).click();
+  await expect(page.locator(".summary")).toContainText("1 个已完成");
+  await page.getByLabel("目标格式", { exact: true }).selectOption("jpg");
+  await expect(page.getByText("设置已改变")).toBeVisible();
+  await expect(page.getByRole("button", { name: "下载旧结果 sample.png" })).toBeVisible();
+  await page.getByRole("button", { name: "重新转换" }).first().click();
+  await expect(page.getByText("设置已改变")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "下载 sample.jpg" })).toBeVisible();
+});
+
 test("PDF to PNG and Word to PDF run on the server", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("选择文件").setInputFiles({ name: "sample.pdf", mimeType: "application/pdf", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.pdf")) });

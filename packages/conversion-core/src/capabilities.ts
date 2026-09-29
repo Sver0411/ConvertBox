@@ -24,13 +24,19 @@ export function validateSettings(settings: ConversionSettings): string | null {
 }
 
 const transitions: Record<JobStatus, JobStatus[]> = {
-  CREATED: ["VALIDATING", "CANCELLED"],
+  CREATED: ["VALIDATING", "QUEUED", "CANCELLED"],
   VALIDATING: ["QUEUED", "FAILED", "CANCELLED"],
-  QUEUED: ["PROCESSING", "CANCELLED"],
+  // Polling can observe terminal server state without observing PROCESSING.
+  QUEUED: ["PROCESSING", "COMPLETED", "FAILED", "CANCELLED"],
   PROCESSING: ["COMPLETED", "FAILED", "CANCELLED"],
-  COMPLETED: [], FAILED: ["VALIDATING"], CANCELLED: ["VALIDATING"],
+  COMPLETED: ["QUEUED"], FAILED: ["VALIDATING", "QUEUED"], CANCELLED: ["VALIDATING", "QUEUED"],
 };
 
 export function canTransition(from: JobStatus, to: JobStatus): boolean {
   return transitions[from].includes(to);
+}
+
+export function transitionStatus(from: JobStatus, to: JobStatus): JobStatus {
+  if (from !== to && !canTransition(from, to)) throw new Error(`Illegal job transition ${from} → ${to}`);
+  return to;
 }

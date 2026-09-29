@@ -1,6 +1,8 @@
 import { zipSync } from "fflate";
 import { uniqueFilename } from "@core/filename";
 
+const MAX_BROWSER_ZIP_BYTES = 64 * 1024 * 1024;
+
 export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -13,6 +15,7 @@ export function downloadBlob(blob: Blob, filename: string): void {
 }
 
 export async function downloadZip(files: { name: string; blob: Blob }[]): Promise<void> {
+  if (files.reduce((total, file) => total + file.blob.size, 0) > MAX_BROWSER_ZIP_BYTES) throw new Error("Browser ZIP size limit exceeded.");
   const used = new Set<string>();
   const entries: Record<string, Uint8Array> = {};
   for (const file of files) entries[uniqueFilename(file.name, used)] = new Uint8Array(await file.blob.arrayBuffer());

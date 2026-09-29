@@ -8,6 +8,8 @@ export interface FileDescriptor {
   mime: string;
   detectedType: Signature;
   size: number;
+  width?: number;
+  height?: number;
   category: FileCategory;
   signature: Signature;
   supportedConversions: string[];
@@ -50,8 +52,10 @@ export interface ConversionJob {
   error?: string;
   errorCode?: string;
   output?: Blob;
+  lastCompletedSettings?: string;
   outputName?: string;
   outputSize?: number;
   serverId?: string;
+  pendingServerId?: string;
   progress?: number | null;
 }

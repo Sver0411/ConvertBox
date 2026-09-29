@@ -1,5 +1,7 @@
 import { CAPABILITIES } from "@core/capabilities";
 import type { FileCategory, FileDescriptor, ImageFormat, Signature } from "@shared/index";
+import { animationKind } from "./animation";
+import { readImageDimensions } from "./dimensions";
 
 const mimeToFormat: Record<string, string> = {
   "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic", "image/heif": "heic", "image/avif": "avif", "application/pdf": "pdf",
@@ -71,11 +73,16 @@ export async function detectFileType(file: File): Promise<FileDescriptor> {
   if (signature === "unknown") error = "Unsupported or unrecognized file signature.";
   else if (extension && extension !== detectedType && !(expected && expected === detectedType) && !(extension === "heif" && detectedType === "heic")) error = `File extension says ${extension.toUpperCase()}, but contents are ${detectedType.toUpperCase()}.`;
   else if (mimeToFormat[mime] && mimeToFormat[mime] !== detectedType) error = `File MIME type says ${mimeToFormat[mime].toUpperCase()}, but contents are ${detectedType.toUpperCase()}.`;
+  const animated = !error ? await animationKind(file, detectedType) : null;
+  if (animated) error = animated === "webp" ? "Animated WebP is not supported yet." : animated === "apng" ? "APNG is not supported yet." : "Animated GIF conversion is not supported yet.";
   const category = error ? "unsupported" : categories[detectedType] ?? "unsupported";
+  const dimensions = !error && ["jpg", "png", "webp"].includes(detectedType) ? await readImageDimensions(file, detectedType) : null;
   return {
     name: file.name, extension, mime, detectedType, size: file.size,
+    width: dimensions?.width, height: dimensions?.height,
     category, signature,
     supportedConversions: category === "image" && detectedType in CAPABILITIES ? CAPABILITIES[detectedType as ImageFormat] : [],
     error,
+    errorCode: animated ? "ANIMATED_IMAGE_UNSUPPORTED" : undefined,
   };
 }

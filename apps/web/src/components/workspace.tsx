@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, ArrowRight, ArrowUp, ArrowDown, Check, ChevronDown, CircleAlert, FileImage, FileText, Film, FolderPlus, Music2, RotateCcw, Trash2, UploadCloud, X, LayoutGrid, Clock3, Info } from "lucide-react";
-import { IMAGE_FORMATS } from "@core/capabilities";
+import { IMAGE_FORMATS, transitionStatus } from "@core/capabilities";
 import { outputFilename } from "@core/filename";
 import { detectFileType } from "@detection/detect";
 import type { ConversionJob, ConversionSettings, FileDescriptor, ImageFormat } from "@shared/index";
@@ -14,11 +14,13 @@ import HistoryPanel from "@/components/history-panel";
 import { clearHistory, listHistory, saveHistory, type HistoryEntry } from "@/lib/history";
 import { chinesePresetNames, defaultPresets, loadCustomPresets, storeCustomPresets, type Preset } from "@/lib/presets";
 import { conversionViews, isConversionView, preferredOutput, toolViews, viewAccepts, viewInputAccept, viewOutputs, type ConversionView, type ToolView } from "@/lib/workspace-views";
+import { DEFAULT_LOCAL_MEMORY_BUDGET, estimatedImageBytes, LocalImageScheduler } from "@/lib/local-scheduler";
+import { effectiveSettings, isStale, type EffectiveControls } from "@/lib/effective-settings";
 
 const MAX_INPUT_SIZE = 25 * 1024 * 1024;
 const MAX_FILES = 100;
-const MAX_ZIP_BYTES = 200 * 1024 * 1024;
-const CONCURRENCY = 2;
+const MAX_ZIP_BYTES = 64 * 1024 * 1024;
+const MAX_BATCH_RUNNERS = 4;
 const LOCAL_IMAGE_FORMATS = new Set(["jpg", "png", "webp"]);
 
 function optionsFor(descriptor: FileDescriptor, browserFormats: ImageFormat[], server: ServerCapabilities | null): string[] {
@@ -33,6 +35,10 @@ function optionsForMode(descriptor: FileDescriptor, browserFormats: ImageFormat[
 
 function isLocal(input: string, output: string): boolean {
   return LOCAL_IMAGE_FORMATS.has(input) && LOCAL_IMAGE_FORMATS.has(output);
+}
+
+function canUseLocal(descriptor: FileDescriptor, settings: { output: string; width?: number; height?: number; quality: number }, bytes: number, keepMetadata: boolean): boolean {
+  return isLocal(descriptor.detectedType, settings.output) && bytes <= MAX_INPUT_SIZE && !keepMetadata && estimatedImageBytes(descriptor, settings) <= DEFAULT_LOCAL_MEMORY_BUDGET;
 }
 
 function humanSize(bytes: number): string {
@@ -77,8 +83,10 @@ export default function Workspace() {
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ type: "limit" | "partial" | "zip" | "server"; count?: number } | null>(null);
+  const effectiveControls: EffectiveControls = useMemo(() => ({ quality, width, height, keepMetadata, pages, dpi, rotation, pdfOperation, bitrate, sampleRate, resolution, fps, videoQuality, pageSize, orientation, margin }), [quality, width, height, keepMetadata, pages, dpi, rotation, pdfOperation, bitrate, sampleRate, resolution, fps, videoQuality, pageSize, orientation, margin]);
   const fileInput = useRef<HTMLInputElement>(null);
   const controllers = useRef(new Map<string, AbortController>());
+  const localScheduler = useRef(new LocalImageScheduler(DEFAULT_LOCAL_MEMORY_BUDGET));
   const dragDepth = useRef(0);
 
   const updateJobs = useCallback((fn: (current: ConversionJob[]) => ConversionJob[]) => {
@@ -162,20 +170,23 @@ export default function Workspace() {
       const descriptor = await detectFileType(file);
       const options = optionsForMode(descriptor, availableFormats, activeServer, view);
       const selected = preferredOutput(view, descriptor, options, format);
-      const limit = isLocal(descriptor.detectedType, selected) && file.size <= MAX_INPUT_SIZE ? MAX_INPUT_SIZE : activeServer?.maxUploadSize ?? 0;
+      const localEligible = canUseLocal(descriptor, { output: selected, quality, width, height }, file.size, keepMetadata);
+      const serverEligible = activeServer?.server.find(item => item.input === descriptor.detectedType)?.outputs.includes(selected) ?? false;
+      const limit = localEligible ? MAX_INPUT_SIZE : activeServer?.maxUploadSize ?? 0;
       if (!descriptor.error && !viewAccepts(view, descriptor)) descriptor.error = "File is not suitable for this workspace.";
+      if (!descriptor.error && isLocal(descriptor.detectedType, selected) && !localEligible && !serverEligible) descriptor.error = "Image exceeds the local memory budget.";
       if (file.size > limit) descriptor.error = "File exceeds the available processing limit.";
       if (!descriptor.error && options.length === 0) descriptor.error = "Server converter is unavailable for this file.";
       if (descriptor.error) descriptor.category = "unsupported";
       return {
         id: crypto.randomUUID(), workspace: view, file, descriptor, settings: { output: selected, quality },
         status: descriptor.error ? "FAILED" : "CREATED", stage: "queued", createdAt: Date.now(),
-        error: descriptor.error,
+        error: descriptor.error, errorCode: descriptor.errorCode,
       } satisfies ConversionJob;
     }));
     if (additions[0]?.settings.output) setFormat(additions[0].settings.output);
     updateJobs(current => [...current, ...additions]);
-  }, [activeView, format, quality, availableFormats, serverCapabilities, updateJobs]);
+  }, [activeView, format, quality, width, height, keepMetadata, availableFormats, serverCapabilities, updateJobs]);
 
   const onDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -191,17 +202,17 @@ export default function Workspace() {
   }, [activeView, addFiles]);
 
   const patchJob = useCallback((id: string, patch: Partial<ConversionJob>) => {
-    updateJobs(current => current.map(job => job.id === id ? { ...job, ...patch } : job));
+    updateJobs(current => current.map(job => job.id === id ? { ...job, ...patch, status: patch.status ? transitionStatus(job.status, patch.status) : job.status } : job));
   }, [updateJobs]);
 
-  const runBatch = useCallback(async () => {
+  const runBatch = useCallback(async (onlyId?: string) => {
     if (busy || !isConversionView(activeView)) return;
     const view = isConversionView(activeView) ? activeView : "all";
-    const pending = jobsRef.current.filter(job => job.descriptor.category !== "unsupported" && viewAccepts(view, job.descriptor) && ["CREATED", "FAILED", "CANCELLED"].includes(job.status));
+    const pending = jobsRef.current.filter(job => (!onlyId || job.id === onlyId) && job.descriptor.category !== "unsupported" && viewAccepts(view, job.descriptor) && (["CREATED", "FAILED", "CANCELLED"].includes(job.status) || isStale(job, effectiveControls, view)));
     if (!pending.length) return;
     setBusy(true);
     updateJobs(current => current.map(job => pending.some(item => item.id === job.id)
-      ? { ...job, status: "QUEUED", stage: "queued", error: undefined, output: undefined, serverId: undefined, progress: null }
+      ? { ...job, status: transitionStatus(job.status, "QUEUED"), stage: "queued", error: undefined, errorCode: undefined, progress: null }
       : job));
     let cursor = 0;
     const runOne = async () => {
@@ -212,27 +223,30 @@ export default function Workspace() {
         controllers.current.set(job.id, controller);
         if (controller.signal.aborted) continue;
         const settings = { ...job.settings, quality, width, height, pages, dpi, rotation, bitrate, sample_rate: sampleRate, resolution, fps, video_quality: videoQuality };
-        const local = isLocal(job.descriptor.detectedType, settings.output) && job.file.size <= MAX_INPUT_SIZE && !keepMetadata;
-        patchJob(job.id, { status: "PROCESSING", stage: local ? "decoding" : "uploading", settings, startedAt: Date.now() });
+        const settingsKey = effectiveSettings(job, effectiveControls, view);
+        const local = canUseLocal(job.descriptor, settings, job.file.size, keepMetadata);
+        const cost = estimatedImageBytes(job.descriptor, settings);
+        patchJob(job.id, { status: local ? "PROCESSING" : "QUEUED", stage: local ? "decoding" : "uploading", settings, startedAt: Date.now() });
         try {
           if (local) {
             const localSettings: ConversionSettings = { output: settings.output as ImageFormat, quality, width, height };
             if (job.file.size > MAX_INPUT_SIZE) throw new Error("File exceeds the 25 MB local limit.");
-            const blob = await convertImage(job.file, localSettings, stage => patchJob(job.id, { stage }), controller.signal, metrics => setDebugMetrics({ name: job.file.name, metrics }));
-            patchJob(job.id, { status: "COMPLETED", stage: "completed", output: blob, outputSize: blob.size,
-              outputName: outputFilename(job.file.name, localSettings.output), completedAt: Date.now() });
+            const blob = await localScheduler.current.run(cost, controller.signal, () => convertImage(job.file, localSettings, stage => patchJob(job.id, { stage }), controller.signal, metrics => setDebugMetrics({ name: job.file.name, metrics })));
+            patchJob(job.id, { status: "COMPLETED", stage: "completed", output: blob, serverId: undefined, outputSize: blob.size,
+              outputName: outputFilename(job.file.name, localSettings.output), completedAt: Date.now(), lastCompletedSettings: settingsKey });
             recordHistory(job, localSettings.output, blob.size, { quality, width, height });
           } else {
             const operation = job.descriptor.category === "pdf" && activeView !== "word" ? pdfOperation : "convert";
             const created = await createServerJob([job.file], settings.output, operation, { quality, width, height, pages, dpi, rotation, bitrate, sample_rate: sampleRate, resolution, fps, video_quality: videoQuality, page_size: pageSize, orientation, margin, keep_metadata: keepMetadata }, controller.signal);
-            patchJob(job.id, { serverId: created.id, status: "QUEUED", stage: "queued" });
+            patchJob(job.id, { pendingServerId: created.id, status: "QUEUED", stage: "queued" });
             const finished = await pollServerJob(created.id, state => patchJob(job.id, {
               status: state.status === "QUEUED" ? "QUEUED" : state.status === "PROCESSING" ? "PROCESSING" : state.status === "FAILED" ? "FAILED" : state.status === "COMPLETED" ? "COMPLETED" : "CANCELLED",
               stage: state.status === "COMPLETED" ? "completed" : "processing", progress: state.progress,
-              error: state.error ?? undefined, errorCode: state.errorCode ?? undefined, outputName: state.outputName ?? undefined, outputSize: state.outputSize ?? undefined,
+              error: state.error ?? undefined, errorCode: state.errorCode ?? undefined,
             }), controller.signal);
             if (finished.status !== "COMPLETED") throw new ServerApiError(finished.error ?? "Server conversion failed", finished.errorCode ?? "CONVERSION_FAILED", 422);
-            patchJob(job.id, { status: "COMPLETED", completedAt: Date.now() });
+            patchJob(job.id, { status: "COMPLETED", output: undefined, serverId: created.id, pendingServerId: undefined, outputName: finished.outputName ?? undefined, outputSize: finished.outputSize ?? undefined, completedAt: Date.now(), lastCompletedSettings: settingsKey });
+            if (job.serverId && job.serverId !== created.id) void deleteServerJob(job.serverId).catch(() => {});
             recordHistory(job, settings.output, finished.outputSize ?? 0, { quality, width, height, keep_metadata: keepMetadata, pages, dpi, rotation, bitrate, sample_rate: sampleRate, resolution, fps, video_quality: videoQuality });
           }
         } catch (error) {
@@ -243,9 +257,9 @@ export default function Workspace() {
         }
       }
     };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pending.length) }, runOne));
+    await Promise.all(Array.from({ length: Math.min(MAX_BATCH_RUNNERS, pending.length) }, runOne));
     setBusy(false);
-  }, [activeView, busy, quality, width, height, keepMetadata, pages, dpi, rotation, bitrate, sampleRate, resolution, fps, videoQuality, pageSize, orientation, margin, pdfOperation, patchJob, updateJobs, recordHistory]);
+  }, [activeView, busy, quality, width, height, keepMetadata, pages, dpi, rotation, bitrate, sampleRate, resolution, fps, videoQuality, pageSize, orientation, margin, pdfOperation, effectiveControls, patchJob, updateJobs, recordHistory]);
 
   const runGroup = useCallback(async (kind: "merge" | "images") => {
     if (busy) return;
@@ -257,7 +271,7 @@ export default function Workspace() {
     const id = crypto.randomUUID();
     const result: ConversionJob = {
       id, workspace: view, file: new File([], label), descriptor: { ...first.descriptor, name: label, detectedType: "pdf", category: "pdf", size: 0 },
-      settings: { output: "pdf", quality }, status: "PROCESSING", stage: "uploading", createdAt: Date.now(),
+      settings: { output: "pdf", quality }, status: "QUEUED", stage: "uploading", createdAt: Date.now(),
     };
     setBusy(true);
     updateJobs(current => [...current, result]);
@@ -265,14 +279,14 @@ export default function Workspace() {
     controllers.current.set(id, controller);
     try {
       const created = await createServerJob(sources.map(job => job.file), "pdf", kind === "merge" ? "merge" : "convert", { quality, page_size: pageSize, orientation, margin }, controller.signal);
-      patchJob(id, { serverId: created.id, status: "QUEUED", stage: "queued" });
+      patchJob(id, { pendingServerId: created.id, status: "QUEUED", stage: "queued" });
       const finished = await pollServerJob(created.id, state => patchJob(id, {
         status: state.status === "COMPLETED" ? "COMPLETED" : state.status === "FAILED" ? "FAILED" : state.status === "PROCESSING" ? "PROCESSING" : "QUEUED",
         stage: state.status === "COMPLETED" ? "completed" : "processing", progress: state.progress,
         error: state.error ?? undefined, outputName: state.outputName ?? undefined, outputSize: state.outputSize ?? undefined,
       }), controller.signal);
       if (finished.status !== "COMPLETED") throw new Error(finished.error ?? "Server conversion failed");
-      patchJob(id, { status: "COMPLETED", completedAt: Date.now() });
+      patchJob(id, { status: "COMPLETED", serverId: created.id, pendingServerId: undefined, completedAt: Date.now() });
       recordHistory(result, "pdf", finished.outputSize ?? 0, { quality });
     } catch (error) {
       patchJob(id, { status: "FAILED", error: error instanceof Error ? error.message : "Server conversion failed", errorCode: error instanceof ServerApiError ? error.code : undefined });
@@ -286,7 +300,7 @@ export default function Workspace() {
     const controller = controllers.current.get(id);
     if (controller) controller.abort();
     const job = jobsRef.current.find(item => item.id === id);
-    if (job?.serverId && job.status === "QUEUED") void deleteServerJob(job.serverId).catch(() => {});
+    if (job?.pendingServerId && job.status === "QUEUED") void deleteServerJob(job.pendingServerId).catch(() => {});
     if (!controller) patchJob(id, { status: "CANCELLED" });
   };
 
@@ -370,7 +384,8 @@ export default function Workspace() {
   const settled = supported.filter(job => ["COMPLETED", "FAILED", "CANCELLED"].includes(job.status)).length;
   const zipBytes = completed.reduce((sum, job) => sum + (job.output?.size ?? 0), 0);
   const canZip = completed.length > 1 && completed.every(job => job.output) && zipBytes <= MAX_ZIP_BYTES;
-  const pendingCount = supported.filter(job => ["CREATED", "FAILED", "CANCELLED"].includes(job.status)).length;
+  const pendingCount = supported.filter(job => ["CREATED", "FAILED", "CANCELLED"].includes(job.status) || isStale(job, effectiveControls, view)).length;
+  const staleCount = supported.filter(job => isStale(job, effectiveControls, view)).length;
   const noticeText = notice?.type === "limit" ? t.limit : notice?.type === "partial" ? t.partial(notice.count ?? 0) : notice?.type === "zip" ? t.zipError : notice?.type === "server" ? t.serverUnavailable : "";
   const categories = new Set(supported.map(job => job.descriptor.category));
   const oneCategory = categories.size === 1 ? supported[0]?.descriptor.category : null;
@@ -418,12 +433,12 @@ export default function Workspace() {
         {noticeText && <p className="notice" role="status"><CircleAlert size={16} />{noticeText}</p>}
         <div className="file-list" role="list">{visibleJobs.map(job => <div className="file-row" role="listitem" key={job.id}>
           <div className={`file-icon ${job.status === "FAILED" ? "file-icon-error" : ""}`}>{job.descriptor.category === "video" ? <Film size={21} /> : job.descriptor.category === "audio" ? <Music2 size={21} /> : job.descriptor.category === "office" || job.descriptor.category === "pdf" ? <FileText size={21} /> : <FileImage size={21} strokeWidth={1.7} />}</div>
-          <div className="file-main"><div className="file-name" title={job.file.name}>{job.file.name}</div><div className="file-sub">{job.file.size ? humanSize(job.file.size) : t.groupResult} <span>·</span> {job.descriptor.detectedType.toUpperCase()} <span>·</span> {(job.output || !job.serverId && isLocal(job.descriptor.detectedType, job.settings.output) && job.file.size <= MAX_INPUT_SIZE && !keepMetadata) ? t.localShort : t.serverShort}{job.status === "COMPLETED" && job.outputName ? <> <span>→</span> {job.outputName.split(".").pop()?.toUpperCase()} <span>·</span> {humanSize(job.outputSize ?? job.output?.size ?? 0)}{job.file.size > 0 ? <> <span>·</span> {t.sizeChange(Math.round((1 - (job.outputSize ?? job.output?.size ?? 0) / job.file.size) * 100))}</> : null}</> : null}</div>{job.error && <div className="file-error">{localizeError(job.error, language, job.errorCode)}</div>}</div>
+          <div className="file-main"><div className="file-name" title={job.file.name}>{job.file.name}</div><div className="file-sub">{job.file.size ? humanSize(job.file.size) : t.groupResult} <span>·</span> {job.descriptor.detectedType.toUpperCase()} <span>·</span> {(job.output || !job.serverId && canUseLocal(job.descriptor, { ...job.settings, width, height }, job.file.size, keepMetadata)) ? t.localShort : t.serverShort}{job.status === "COMPLETED" && job.outputName ? <> <span>→</span> {job.outputName.split(".").pop()?.toUpperCase()} <span>·</span> {humanSize(job.outputSize ?? job.output?.size ?? 0)}{job.file.size > 0 ? <> <span>·</span> {t.sizeChange(Math.round((1 - (job.outputSize ?? job.output?.size ?? 0) / job.file.size) * 100))}</> : null}</> : null}</div>{job.error && <div className="file-error">{localizeError(job.error, language, job.errorCode)}</div>}</div>
           {job.descriptor.category !== "unsupported" && job.status !== "COMPLETED" && shownOptions.length === 0 && (pdfOperation === "convert" || view === "word") && <select className="row-target" aria-label={`${job.file.name} ${t.convertTo}`} value={job.settings.output} onChange={event => patchJob(job.id, { settings: { ...job.settings, output: event.target.value } })} disabled={busy}>{optionsForMode(job.descriptor, availableFormats, serverCapabilities, view).map(item => <option key={item} value={item}>{item.toUpperCase()}</option>)}</select>}
-          <div className={`status-pill status-${job.status.toLowerCase()}`}>{job.status === "COMPLETED" && <Check size={13} />}{job.status === "FAILED" && <CircleAlert size={13} />}{job.status === "PROCESSING" ? job.stage === "uploading" ? t.uploading : job.progress != null ? `${Math.round(job.progress * 100)}%` : job.stage === "encoding" ? t.encoding : job.stage === "decoding" ? t.decoding : t.processing : t.status[job.status]}</div>
-          <div className="row-actions">{groupKind && job.file.size > 0 && <><button className="icon-button" title={t.moveUp} aria-label={`${t.moveUp} ${job.file.name}`} onClick={() => moveJob(job.id, -1)} disabled={busy || visibleJobs[0]?.id === job.id}><ArrowUp size={15} /></button><button className="icon-button" title={t.moveDown} aria-label={`${t.moveDown} ${job.file.name}`} onClick={() => moveJob(job.id, 1)} disabled={busy || visibleJobs[visibleJobs.length - 1]?.id === job.id}><ArrowDown size={15} /></button></>}{job.status === "COMPLETED" && job.outputName && <button className="icon-button" title={t.download} aria-label={`${t.download} ${job.outputName}`} onClick={() => job.serverId ? downloadServerJob(job.serverId) : job.output && downloadBlob(job.output, job.outputName!)}><ArrowDownToLine size={18} /></button>}{(job.status === "QUEUED" || (job.status === "PROCESSING" && (job.stage === "uploading" || isLocal(job.descriptor.detectedType, job.settings.output)))) && <button className="icon-button" title={t.cancel} aria-label={`${t.cancel} ${job.file.name}`} onClick={() => cancelJob(job.id)}><X size={18} /></button>}{(job.status === "FAILED" || job.status === "CANCELLED") && job.descriptor.category !== "unsupported" && <button className="icon-button" title={t.retry} aria-label={`${t.retry} ${job.file.name}`} onClick={() => { patchJob(job.id, { status: "CREATED", error: undefined }); }}><RotateCcw size={17} /></button>}{!(job.serverId && job.status === "PROCESSING") && <button className="icon-button muted-action" title={t.remove} aria-label={`${t.remove} ${job.file.name}`} onClick={() => removeJob(job.id)}><Trash2 size={17} /></button>}</div>
+          <div className={`status-pill status-${job.status.toLowerCase()}`}>{job.status === "COMPLETED" && !isStale(job, effectiveControls, view) && <Check size={13} />}{job.status === "FAILED" && <CircleAlert size={13} />}{job.stage === "uploading" && job.status === "QUEUED" ? t.uploading : job.status === "PROCESSING" ? job.progress != null ? `${Math.round(job.progress * 100)}%` : job.stage === "encoding" ? t.encoding : job.stage === "decoding" ? t.decoding : t.processing : isStale(job, effectiveControls, view) ? t.settingsChanged : t.status[job.status]}</div>
+          <div className="row-actions">{groupKind && job.file.size > 0 && <><button className="icon-button" title={t.moveUp} aria-label={`${t.moveUp} ${job.file.name}`} onClick={() => moveJob(job.id, -1)} disabled={busy || visibleJobs[0]?.id === job.id}><ArrowUp size={15} /></button><button className="icon-button" title={t.moveDown} aria-label={`${t.moveDown} ${job.file.name}`} onClick={() => moveJob(job.id, 1)} disabled={busy || visibleJobs[visibleJobs.length - 1]?.id === job.id}><ArrowDown size={15} /></button></>}{job.outputName && (job.output || job.serverId) && <button className="icon-button" title={isStale(job, effectiveControls, view) || job.status !== "COMPLETED" ? t.downloadOld : t.download} aria-label={`${isStale(job, effectiveControls, view) || job.status !== "COMPLETED" ? t.downloadOld : t.download} ${job.outputName}`} onClick={() => job.serverId ? downloadServerJob(job.serverId) : job.output && downloadBlob(job.output, job.outputName!)}><ArrowDownToLine size={18} /></button>}{isStale(job, effectiveControls, view) && <button className="text-button" onClick={() => void runBatch(job.id)} disabled={busy}>{t.reconvert}</button>}{(job.status === "QUEUED" || (job.status === "PROCESSING" && (job.stage === "uploading" || isLocal(job.descriptor.detectedType, job.settings.output)))) && <button className="icon-button" title={t.cancel} aria-label={`${t.cancel} ${job.file.name}`} onClick={() => cancelJob(job.id)}><X size={18} /></button>}{(job.status === "FAILED" || job.status === "CANCELLED") && job.descriptor.category !== "unsupported" && <button className="icon-button" title={t.retry} aria-label={`${t.retry} ${job.file.name}`} onClick={() => void runBatch(job.id)}><RotateCcw size={17} /></button>}{!(job.serverId && job.status === "PROCESSING") && <button className="icon-button muted-action" title={t.remove} aria-label={`${t.remove} ${job.file.name}`} onClick={() => removeJob(job.id)}><Trash2 size={17} /></button>}</div>
         </div>)}</div>
-        <div className="workspace-footer"><div className="progress-side">{busy ? <><div className="progress-label"><span>{t.convertProgress}</span><strong>{settled} / {supported.length}</strong></div><div className="progress-track" role="progressbar" aria-valuenow={settled} aria-valuemin={0} aria-valuemax={supported.length}><div style={{ width: `${supported.length ? (settled / supported.length) * 100 : 0}%` }} /></div></> : completed.length ? <div className="summary"><Check size={16} /> {t.completeSummary(completed.length)}{failed.filter(job => job.descriptor.category !== "unsupported").length ? ` · ${t.failedSummary(failed.filter(job => job.descriptor.category !== "unsupported").length)}` : ""}</div> : <div className="summary-sub">{supported.length ? t.ready : t.addSupported}</div>}</div><div className="footer-actions">{canZip && <button className="secondary-button" onClick={() => { void downloadZip(completed.filter(job => job.output && job.outputName).map(job => ({ name: job.outputName!, blob: job.output! }))).catch(() => setNotice({ type: "zip" })); }}><ArrowDownToLine size={17} /> {t.downloadAll}</button>}{completed.length > 1 && completed.every(job => job.output) && !canZip && <span className="zip-note">{t.zipLimit}</span>}{groupKind ? <button className="primary-button" disabled={busy} onClick={() => void runGroup(groupKind)}>{groupKind === "merge" ? t.pdfMerge : t.imagesToPdf}<ArrowRight size={17} /></button> : (pendingCount > 0 || busy) && <button className="primary-button" disabled={busy || !pendingCount} onClick={() => void runBatch()}>{busy ? t.converting : completed.length ? t.convertRemaining : t.convertFiles}<ArrowRight size={17} /></button>}</div></div>
+        <div className="workspace-footer"><div className="progress-side">{busy ? <><div className="progress-label"><span>{t.convertProgress}</span><strong>{settled} / {supported.length}</strong></div><div className="progress-track" role="progressbar" aria-valuenow={settled} aria-valuemin={0} aria-valuemax={supported.length}><div style={{ width: `${supported.length ? (settled / supported.length) * 100 : 0}%` }} /></div></> : completed.length ? <div className="summary"><Check size={16} /> {t.completeSummary(completed.length)}{failed.filter(job => job.descriptor.category !== "unsupported").length ? ` · ${t.failedSummary(failed.filter(job => job.descriptor.category !== "unsupported").length)}` : ""}</div> : <div className="summary-sub">{supported.length ? t.ready : t.addSupported}</div>}</div><div className="footer-actions">{canZip && <button className="secondary-button" onClick={() => { void downloadZip(completed.filter(job => job.output && job.outputName).map(job => ({ name: job.outputName!, blob: job.output! }))).catch(() => setNotice({ type: "zip" })); }}><ArrowDownToLine size={17} /> {t.downloadAll}</button>}{completed.length > 1 && completed.every(job => job.output) && !canZip && <span className="zip-note">{t.zipLimit}</span>}{groupKind ? <button className="primary-button" disabled={busy} onClick={() => void runGroup(groupKind)}>{groupKind === "merge" ? t.pdfMerge : t.imagesToPdf}<ArrowRight size={17} /></button> : (pendingCount > 0 || busy) && <button className="primary-button" disabled={busy || !pendingCount} onClick={() => void runBatch()}>{busy ? t.converting : staleCount === pendingCount ? t.reconvert : completed.length ? t.convertRemaining : t.convertFiles}<ArrowRight size={17} /></button>}</div></div>
       </section>}
       {showDebug && <section className="debug-metrics"><h2>Debug metrics</h2>{debugMetrics ? <pre>{JSON.stringify({ file: debugMetrics.name, ...debugMetrics.metrics, peakMemory: "unavailable" }, null, 2)}</pre> : <p>Run a local image conversion to collect timing data.</p>}</section>}
       </>}
