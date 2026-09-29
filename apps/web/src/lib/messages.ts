@@ -29,6 +29,7 @@ export const copy = {
     errorEncode: "当前浏览器不支持此输出格式。", errorDecode: "无法解码图片。文件可能损坏，或浏览器不支持其编码。",
     errorNoText: "PDF 中没有可选择的文字；扫描件需要 OCR。", errorProtected: "暂不支持加密 PDF。", errorServer: "服务器处理失败，请检查文件后重试。", errorRange: "页码范围不在文件页数内。", errorOffice: "Office 文件无法转换为 PDF。",
     errorGeneric: "转换失败，请检查文件后重试。",
+    errorCodes: { FILE_TOO_LARGE: "文件超过上传大小限制。", UNSUPPORTED_FORMAT: "不支持此转换格式。", ANIMATED_IMAGE_UNSUPPORTED: "暂不支持转换动画图片。", QUEUE_FULL: "服务器任务队列已满，请稍后重试。", UPLOAD_BUSY: "服务器繁忙，请稍后重试。", RATE_LIMITED: "请求过于频繁，请稍后重试。", DISK_LOW: "服务器存储空间不足，请稍后重试。", TIMEOUT: "处理超时，请重试。", OUTPUT_TOO_LARGE: "转换结果超过服务器大小限制。", PDF_LIMIT: "PDF 页数或渲染大小超过限制。", INVALID_FILE: "文件内容无效或不受支持。", INVALID_SETTINGS: "转换设置无效。", CONVERTER_UNAVAILABLE: "转换器暂时不可用。", CONVERSION_FAILED: "转换失败，请检查文件后重试。" },
   },
   en: {
     views: { all: "All files", image: "Images", pdf: "PDF", word: "Word", audio: "Audio", video: "Video", history: "History", about: "About" },
@@ -56,11 +57,13 @@ export const copy = {
     errorEncode: "This browser does not support the selected output format.", errorDecode: "This image could not be decoded. It may be damaged or use an unsupported codec.",
     errorNoText: "No selectable text was found in this PDF. Scanned pages need OCR.", errorProtected: "Encrypted PDFs are not supported yet.", errorServer: "Server processing failed. Check the file and retry.", errorRange: "Page range is outside this PDF.", errorOffice: "Office document could not be converted to PDF.",
     errorGeneric: "Conversion failed. Check the file and retry.",
+    errorCodes: { FILE_TOO_LARGE: "File exceeds the upload size limit.", UNSUPPORTED_FORMAT: "This conversion is not supported.", ANIMATED_IMAGE_UNSUPPORTED: "Animated image conversion is not supported yet.", QUEUE_FULL: "Server queue is full. Retry shortly.", UPLOAD_BUSY: "Server is busy. Retry shortly.", RATE_LIMITED: "Too many requests. Retry shortly.", DISK_LOW: "Server storage is low. Retry shortly.", TIMEOUT: "Processing timed out. Retry.", OUTPUT_TOO_LARGE: "Converted output exceeds the server size limit.", PDF_LIMIT: "PDF page or render limit exceeded.", INVALID_FILE: "File contents are invalid or unsupported.", INVALID_SETTINGS: "Conversion settings are invalid.", CONVERTER_UNAVAILABLE: "Converter is temporarily unavailable.", CONVERSION_FAILED: "Conversion failed. Check the file and retry." },
   },
 };
 
-export function localizeError(error: string, language: Language): string {
+export function localizeError(error: string, language: Language, code?: string): string {
   const t = copy[language];
+  if (code && code in t.errorCodes) return t.errorCodes[code as keyof typeof t.errorCodes];
   if (error.startsWith("File signature") || error.startsWith("Unsupported or unrecognized")) return t.errorSignature;
   if (error.startsWith("File extension") || error.startsWith("File MIME")) return t.errorMismatch;
   if (error.startsWith("File is not suitable")) return t.errorView;

@@ -16,18 +16,27 @@ export interface ServerJob {
   status: "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED" | "CANCELLED";
   progress: number | null;
   error: string | null;
+  errorCode: string | null;
   outputName: string | null;
   outputSize: number | null;
+}
+
+export class ServerApiError extends Error {
+  constructor(message: string, public readonly code: string, public readonly status: number) {
+    super(message);
+  }
 }
 
 async function check(response: Response): Promise<Response> {
   if (response.ok) return response;
   let message = `Server error (${response.status})`;
+  let code = "SERVER_ERROR";
   try {
-    const body = await response.json() as { detail?: string };
-    if (body.detail) message = body.detail;
+    const body = await response.json() as { detail?: string | { code?: string; message?: string } };
+    if (typeof body.detail === "string") message = body.detail;
+    else if (body.detail) { message = body.detail.message ?? message; code = body.detail.code ?? code; }
   } catch { /* keep HTTP error */ }
-  throw new Error(message);
+  throw new ServerApiError(message, code, response.status);
 }
 
 export async function getServerCapabilities(): Promise<ServerCapabilities> {

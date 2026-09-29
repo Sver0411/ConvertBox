@@ -6,21 +6,26 @@ import json
 import os
 import re
 import shutil
+import asyncio
+import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, Form, UploadFile, Request
+from fastapi.responses import FileResponse, JSONResponse
 
 from .capabilities import PDF_OPERATIONS, can_convert, server_capabilities
 from .converters import ConversionError
 from .core import JobStatus
 from .detection import InvalidFile, detect_file
 from .jobs import Job, JobManager
+from .admission import UploadAdmission, check_storage
+from .config import MAX_UPLOAD_SIZE
+from .errors import ApiError
 
-MAX_UPLOAD_SIZE = int(os.environ.get("MAX_UPLOAD_SIZE", str(1024 * 1024 * 1024)))
 manager = JobManager(workers=int(os.environ.get("MAX_CONCURRENT_JOBS", "2")))
+admission = UploadAdmission()
 
 
 @asynccontextmanager
@@ -33,9 +38,36 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="ConvertBox API", version="0.2.0", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def admit_upload(request: Request, call_next):
+    if request.method != "POST" or request.url.path != "/jobs":
+        return await call_next(request)
+    try:
+        admission.check_rate(request.client.host if request.client else "unknown")
+        async with admission.slot():
+            await asyncio.to_thread(check_storage, manager.root)
+            return await call_next(request)
+    except ApiError as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready() -> dict[str, str]:
+    try:
+        check_storage(manager.root)
+        with tempfile.TemporaryFile(dir=manager.root):
+            pass
+    except (ApiError, OSError) as exc:
+        raise ApiError(503, "NOT_READY", "Server storage is unavailable.") from exc
+    workers = [thread for thread in manager.threads if thread.name.startswith("convertbox-worker-")]
+    if len(workers) != manager.worker_count or not all(thread.is_alive() for thread in workers):
+        raise ApiError(503, "NOT_READY", "Conversion workers are unavailable.")
+    return {"status": "ready"}
 
 
 @app.get("/capabilities")
@@ -63,7 +95,7 @@ async def create_job(
     settings: Annotated[str, Form()] = "{}",
 ) -> dict[str, object]:
     if not files or len(files) > 100:
-        raise HTTPException(400, "Upload 1–100 files")
+        raise ApiError(400, "INVALID_FILE", "Upload 1–100 files.")
     try:
         parsed = json.loads(settings)
         if not isinstance(parsed, dict) or len(settings) > 4096:
@@ -71,10 +103,10 @@ async def create_job(
         allowed = {"quality", "width", "height", "pages", "dpi", "rotation", "bitrate", "sample_rate", "resolution", "fps", "video_quality", "page_size", "orientation", "margin", "keep_metadata"}
         parsed = {key: value for key, value in parsed.items() if key in allowed and isinstance(value, (str, int, float, bool))}
     except (ValueError, TypeError) as exc:
-        raise HTTPException(400, "Invalid settings") from exc
+        raise ApiError(400, "INVALID_SETTINGS", "Invalid conversion settings.") from exc
     if operation not in ("convert", *PDF_OPERATIONS, "compress"):
-        raise HTTPException(400, "Unsupported operation")
-    job_id, directory = manager.allocate()
+        raise ApiError(400, "UNSUPPORTED_FORMAT", "Unsupported operation.")
+    job_id, directory = await asyncio.to_thread(manager.allocate)
     paths: list[Path] = []
     detected: list[str] = []
     try:
@@ -85,28 +117,29 @@ async def create_job(
                 while chunk := await upload.read(1024 * 1024):
                     total += len(chunk)
                     if total > MAX_UPLOAD_SIZE:
-                        raise HTTPException(413, "Upload exceeds server limit")
-                    target.write(chunk)
-            kind = detect_file(raw, upload.filename or "")
+                        raise ApiError(413, "FILE_TOO_LARGE", "Upload exceeds server limit.")
+                    await asyncio.to_thread(check_storage, manager.root)
+                    await asyncio.to_thread(target.write, chunk)
+            kind = await asyncio.to_thread(detect_file, raw, upload.filename or "")
             named = directory / f"input_{index}.{kind}"
-            raw.rename(named)
+            await asyncio.to_thread(raw.rename, named)
             paths.append(named)
             detected.append(kind)
             await upload.close()
         source = detected[0]
         if operation != "convert":
             if source != "pdf" or any(kind != "pdf" for kind in detected):
-                raise HTTPException(400, "PDF operation requires PDF inputs")
+                raise ApiError(400, "INVALID_FILE", "PDF operation requires PDF inputs.")
             if operation == "merge" and len(paths) < 2:
-                raise HTTPException(400, "Merge requires at least two PDFs")
+                raise ApiError(400, "INVALID_FILE", "Merge requires at least two PDFs.")
             if operation != "merge" and len(paths) != 1:
-                raise HTTPException(400, "This PDF operation accepts one file")
+                raise ApiError(400, "INVALID_FILE", "This PDF operation accepts one file.")
             output = "pdf"
         elif len(paths) > 1:
             if output != "pdf" or any(kind not in ("jpg", "png", "webp", "bmp", "gif", "heic", "avif") for kind in detected):
-                raise HTTPException(400, "Multiple files are supported for images to PDF")
+                raise ApiError(400, "INVALID_FILE", "Multiple files are supported for images to PDF.")
         if not can_convert(source, output) and not (source == "pdf" and output == "pdf" and operation != "convert"):
-            raise HTTPException(400, "Conversion is not supported")
+            raise ApiError(400, "UNSUPPORTED_FORMAT", "Conversion is not supported.")
         extension = "zip" if (source == "pdf" and output in ("png", "jpg")) or operation == "split" else output
         base = "merged" if operation == "merge" else "split" if operation == "split" else "images" if len(paths) > 1 and output == "pdf" else _safe_stem(files[0].filename or "converted")
         output_name = f"{base}.{extension}"
@@ -115,21 +148,28 @@ async def create_job(
             output_format=output, output_name=output_name, output_path=directory / f"result.{extension}",
             operation=operation, settings=parsed,
         )
-        manager.submit(job)
+        await asyncio.to_thread(manager.submit, job)
         return job.public()
-    except (InvalidFile, ConversionError) as exc:
-        shutil.rmtree(directory, ignore_errors=True)
-        raise HTTPException(400, str(exc)) from exc
+    except InvalidFile as exc:
+        await asyncio.to_thread(shutil.rmtree, directory, ignore_errors=True)
+        raise ApiError(400, "INVALID_FILE", str(exc)) from exc
+    except ConversionError as exc:
+        await asyncio.to_thread(shutil.rmtree, directory, ignore_errors=True)
+        code = "QUEUE_FULL" if "queue is full" in str(exc).lower() else "CONVERTER_UNAVAILABLE"
+        raise ApiError(503 if code == "QUEUE_FULL" else 400, code, str(exc)) from exc
     except Exception:
-        shutil.rmtree(directory, ignore_errors=True)
+        await asyncio.to_thread(shutil.rmtree, directory, ignore_errors=True)
         raise
+    finally:
+        for upload in files:
+            await upload.close()
 
 
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str) -> dict[str, object]:
     job = manager.get(job_id)
     if not job:
-        raise HTTPException(404, "Job not found or expired")
+        raise ApiError(404, "JOB_NOT_FOUND", "Job not found or expired.")
     return job.public()
 
 
@@ -137,7 +177,7 @@ def get_job(job_id: str) -> dict[str, object]:
 def download_job(job_id: str) -> FileResponse:
     job = manager.get(job_id)
     if not job or job.status != JobStatus.COMPLETED or not job.output_path.is_file():
-        raise HTTPException(404, "Result not found or expired")
+        raise ApiError(404, "JOB_NOT_FOUND", "Result not found or expired.")
     return FileResponse(job.output_path, filename=job.output_name, media_type="application/octet-stream")
 
 
@@ -145,6 +185,6 @@ def download_job(job_id: str) -> FileResponse:
 def delete_job(job_id: str) -> None:
     try:
         if not manager.delete(job_id):
-            raise HTTPException(404, "Job not found")
+            raise ApiError(404, "JOB_NOT_FOUND", "Job not found.")
     except ConversionError as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise ApiError(409, "CANNOT_CANCEL", str(exc)) from exc

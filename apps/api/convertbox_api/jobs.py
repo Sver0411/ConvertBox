@@ -16,6 +16,7 @@ from pathlib import Path
 from .capabilities import VIDEO_INPUTS
 from .converters import ConversionError, make_registry
 from .core import ConversionRequest, JobStatus
+from . import config
 
 log = logging.getLogger(__name__)
 TEMP_ROOT = Path(os.environ.get("TEMP_DIRECTORY", str(Path(tempfile.gettempdir()) / "convertbox")))
@@ -36,13 +37,14 @@ class Job:
     status: JobStatus = JobStatus.CREATED
     progress: float | None = None
     error: str | None = None
+    error_code: str | None = None
     created_at: float = field(default_factory=time.time)
     completed_at: float | None = None
 
     def public(self) -> dict[str, object]:
         return {
             "id": self.id, "status": self.status.value, "progress": self.progress,
-            "error": self.error, "outputName": self.output_name if self.status == JobStatus.COMPLETED else None,
+            "error": self.error, "errorCode": self.error_code, "outputName": self.output_name if self.status == JobStatus.COMPLETED else None,
             "outputSize": self.output_path.stat().st_size if self.status == JobStatus.COMPLETED and self.output_path.exists() else None,
             "createdAt": self.created_at,
         }
@@ -184,21 +186,27 @@ class JobManager:
                     converter.convert(request)
                 if not job.output_path.is_file() or job.output_path.stat().st_size == 0:
                     raise ConversionError("Converter produced no output")
+                if job.output_path.stat().st_size > config.MAX_OUTPUT_SIZE:
+                    raise ConversionError("Output exceeds server size limit", "OUTPUT_TOO_LARGE")
                 with self.lock:
                     job.status = JobStatus.COMPLETED
                     job.progress = 1.0
                     job.completed_at = time.time()
             except ConversionError as exc:
                 log.warning("Job %s rejected: %s", job.id, exc)
+                job.output_path.unlink(missing_ok=True)
                 with self.lock:
                     job.status = JobStatus.FAILED
                     job.error = str(exc).split(":", 1)[0]
+                    job.error_code = exc.code
                     job.completed_at = time.time()
             except Exception:
                 log.exception("Job %s failed", job.id)
+                job.output_path.unlink(missing_ok=True)
                 with self.lock:
                     job.status = JobStatus.FAILED
                     job.error = "Server conversion failed"
+                    job.error_code = "CONVERSION_FAILED"
                     job.completed_at = time.time()
             finally:
                 self.queue.task_done()

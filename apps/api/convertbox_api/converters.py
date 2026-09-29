@@ -17,6 +17,7 @@ from pillow_heif import register_heif_opener
 
 from .capabilities import AUDIO_INPUTS, IMAGE_INPUTS, OFFICE_INPUTS, VIDEO_INPUTS, can_convert
 from .core import ConversionRequest, ConverterRegistry
+from . import config
 
 register_heif_opener()
 MAX_IMAGE_PIXELS = 80_000_000
@@ -24,7 +25,9 @@ Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 
 class ConversionError(ValueError):
-    pass
+    def __init__(self, message: str, code: str = "CONVERSION_FAILED") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 def _int_setting(request: ConversionRequest, key: str, default: int, minimum: int, maximum: int) -> int:
@@ -175,8 +178,12 @@ class PdfConverter:
         if request.operation == "merge":
             with pymupdf.open() as result:
                 paths = request.input_paths or (request.input_path,)
+                total_pages = 0
                 for index, path in enumerate(paths):
                     with pymupdf.open(path) as part:
+                        total_pages += len(part)
+                        if total_pages > config.MAX_PDF_PAGES:
+                            raise ConversionError("PDF page limit exceeded", "PDF_LIMIT")
                         result.insert_pdf(part)
                     _update(request, (index + 1) / len(paths))
                 result.save(request.output_path, garbage=4, deflate=True)
@@ -184,10 +191,14 @@ class PdfConverter:
         with pymupdf.open(request.input_path) as document:
             if document.needs_pass:
                 raise ConversionError("Password-protected PDF is not supported")
+            if len(document) > config.MAX_PDF_PAGES:
+                raise ConversionError("PDF page limit exceeded", "PDF_LIMIT")
             page_spec = str(request.settings.get("pages", "all"))
             selected = _pages(page_spec if request.operation != "split" or ";" not in page_spec else "all", len(document))
             if not selected:
                 raise ConversionError("No pages selected")
+            if len(selected) > config.MAX_PDF_PAGES:
+                raise ConversionError("Too many PDF pages selected", "PDF_LIMIT")
             if request.operation == "split":
                 groups = [(_pages(spec, len(document)), spec.strip()) for spec in page_spec.split(";")] if ";" in page_spec else [([number], str(number + 1)) for number in selected]
                 with ZipFile(request.output_path, "w", ZIP_DEFLATED) as archive:
@@ -215,6 +226,9 @@ class PdfConverter:
                 return
             if request.output_format in ("png", "jpg"):
                 dpi = _int_setting(request, "dpi", 144, 72, 300)
+                projected_pixels = sum(document[number].rect.width * document[number].rect.height * (dpi / 72) ** 2 for number in selected)
+                if projected_pixels > config.MAX_PDF_RENDER_PIXELS:
+                    raise ConversionError("PDF render pixel budget exceeded", "PDF_LIMIT")
                 with ZipFile(request.output_path, "w", ZIP_DEFLATED) as archive:
                     for index, page_number in enumerate(selected):
                         page = document[page_number]
@@ -228,6 +242,8 @@ class PdfConverter:
                         else:
                             data = pix.tobytes("jpg", jpg_quality=_int_setting(request, "quality", 85, 1, 100))
                         archive.writestr(f"page_{page_number + 1}.{request.output_format}", data)
+                        if request.output_path.stat().st_size > config.MAX_PDF_OUTPUT_BYTES:
+                            raise ConversionError("PDF output exceeds size limit", "OUTPUT_TOO_LARGE")
                         _update(request, (index + 1) / len(selected))
                 return
             text = "\n\n".join(document[number].get_text().strip() for number in selected).strip()
@@ -262,6 +278,8 @@ class OfficeConverter:
             result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ConversionError("Office converter unavailable or timed out") from exc
+        finally:
+            shutil.rmtree(profile, ignore_errors=True)
         produced = request.output_path.parent / f"{request.input_path.stem}.pdf"
         if result.returncode != 0 or not produced.is_file():
             raise ConversionError("Office document could not be converted to PDF")

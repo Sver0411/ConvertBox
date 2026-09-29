@@ -12,6 +12,7 @@ export interface FileDescriptor {
   signature: Signature;
   supportedConversions: string[];
   error?: string;
+  errorCode?: string;
 }
 
 export type JobStatus = "CREATED" | "VALIDATING" | "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED" | "CANCELLED";
@@ -47,6 +48,7 @@ export interface ConversionJob {
   startedAt?: number;
   completedAt?: number;
   error?: string;
+  errorCode?: string;
   output?: Blob;
   outputName?: string;
   outputSize?: number;

@@ -9,7 +9,7 @@ import type { ConversionJob, ConversionSettings, FileDescriptor, ImageFormat } f
 import { browserCanEncode, convertImage, type ImageMetrics } from "@/lib/image-converter";
 import { downloadBlob, downloadZip } from "@/lib/download";
 import { copy, localizeError, type Language } from "@/lib/messages";
-import { createServerJob, deleteServerJob, downloadServerJob, getServerCapabilities, pollServerJob, type ServerCapabilities } from "@/lib/server-api";
+import { createServerJob, deleteServerJob, downloadServerJob, getServerCapabilities, pollServerJob, ServerApiError, type ServerCapabilities } from "@/lib/server-api";
 import HistoryPanel from "@/components/history-panel";
 import { clearHistory, listHistory, saveHistory, type HistoryEntry } from "@/lib/history";
 import { chinesePresetNames, defaultPresets, loadCustomPresets, storeCustomPresets, type Preset } from "@/lib/presets";
@@ -229,15 +229,15 @@ export default function Workspace() {
             const finished = await pollServerJob(created.id, state => patchJob(job.id, {
               status: state.status === "QUEUED" ? "QUEUED" : state.status === "PROCESSING" ? "PROCESSING" : state.status === "FAILED" ? "FAILED" : state.status === "COMPLETED" ? "COMPLETED" : "CANCELLED",
               stage: state.status === "COMPLETED" ? "completed" : "processing", progress: state.progress,
-              error: state.error ?? undefined, outputName: state.outputName ?? undefined, outputSize: state.outputSize ?? undefined,
+              error: state.error ?? undefined, errorCode: state.errorCode ?? undefined, outputName: state.outputName ?? undefined, outputSize: state.outputSize ?? undefined,
             }), controller.signal);
-            if (finished.status !== "COMPLETED") throw new Error(finished.error ?? "Server conversion failed");
+            if (finished.status !== "COMPLETED") throw new ServerApiError(finished.error ?? "Server conversion failed", finished.errorCode ?? "CONVERSION_FAILED", 422);
             patchJob(job.id, { status: "COMPLETED", completedAt: Date.now() });
             recordHistory(job, settings.output, finished.outputSize ?? 0, { quality, width, height, keep_metadata: keepMetadata, pages, dpi, rotation, bitrate, sample_rate: sampleRate, resolution, fps, video_quality: videoQuality });
           }
         } catch (error) {
           const cancelled = error instanceof DOMException && error.name === "AbortError";
-          patchJob(job.id, { status: cancelled ? "CANCELLED" : "FAILED", error: cancelled ? undefined : error instanceof Error ? error.message : "Conversion failed." });
+          patchJob(job.id, { status: cancelled ? "CANCELLED" : "FAILED", error: cancelled ? undefined : error instanceof Error ? error.message : "Conversion failed.", errorCode: error instanceof ServerApiError ? error.code : undefined });
         } finally {
           controllers.current.delete(job.id);
         }
@@ -275,7 +275,7 @@ export default function Workspace() {
       patchJob(id, { status: "COMPLETED", completedAt: Date.now() });
       recordHistory(result, "pdf", finished.outputSize ?? 0, { quality });
     } catch (error) {
-      patchJob(id, { status: "FAILED", error: error instanceof Error ? error.message : "Server conversion failed" });
+      patchJob(id, { status: "FAILED", error: error instanceof Error ? error.message : "Server conversion failed", errorCode: error instanceof ServerApiError ? error.code : undefined });
     } finally {
       controllers.current.delete(id);
       setBusy(false);
@@ -418,7 +418,7 @@ export default function Workspace() {
         {noticeText && <p className="notice" role="status"><CircleAlert size={16} />{noticeText}</p>}
         <div className="file-list" role="list">{visibleJobs.map(job => <div className="file-row" role="listitem" key={job.id}>
           <div className={`file-icon ${job.status === "FAILED" ? "file-icon-error" : ""}`}>{job.descriptor.category === "video" ? <Film size={21} /> : job.descriptor.category === "audio" ? <Music2 size={21} /> : job.descriptor.category === "office" || job.descriptor.category === "pdf" ? <FileText size={21} /> : <FileImage size={21} strokeWidth={1.7} />}</div>
-          <div className="file-main"><div className="file-name" title={job.file.name}>{job.file.name}</div><div className="file-sub">{job.file.size ? humanSize(job.file.size) : t.groupResult} <span>·</span> {job.descriptor.detectedType.toUpperCase()} <span>·</span> {(job.output || !job.serverId && isLocal(job.descriptor.detectedType, job.settings.output) && job.file.size <= MAX_INPUT_SIZE && !keepMetadata) ? t.localShort : t.serverShort}{job.status === "COMPLETED" && job.outputName ? <> <span>→</span> {job.outputName.split(".").pop()?.toUpperCase()} <span>·</span> {humanSize(job.outputSize ?? job.output?.size ?? 0)}{job.file.size > 0 ? <> <span>·</span> {t.sizeChange(Math.round((1 - (job.outputSize ?? job.output?.size ?? 0) / job.file.size) * 100))}</> : null}</> : null}</div>{job.error && <div className="file-error">{localizeError(job.error, language)}</div>}</div>
+          <div className="file-main"><div className="file-name" title={job.file.name}>{job.file.name}</div><div className="file-sub">{job.file.size ? humanSize(job.file.size) : t.groupResult} <span>·</span> {job.descriptor.detectedType.toUpperCase()} <span>·</span> {(job.output || !job.serverId && isLocal(job.descriptor.detectedType, job.settings.output) && job.file.size <= MAX_INPUT_SIZE && !keepMetadata) ? t.localShort : t.serverShort}{job.status === "COMPLETED" && job.outputName ? <> <span>→</span> {job.outputName.split(".").pop()?.toUpperCase()} <span>·</span> {humanSize(job.outputSize ?? job.output?.size ?? 0)}{job.file.size > 0 ? <> <span>·</span> {t.sizeChange(Math.round((1 - (job.outputSize ?? job.output?.size ?? 0) / job.file.size) * 100))}</> : null}</> : null}</div>{job.error && <div className="file-error">{localizeError(job.error, language, job.errorCode)}</div>}</div>
           {job.descriptor.category !== "unsupported" && job.status !== "COMPLETED" && shownOptions.length === 0 && (pdfOperation === "convert" || view === "word") && <select className="row-target" aria-label={`${job.file.name} ${t.convertTo}`} value={job.settings.output} onChange={event => patchJob(job.id, { settings: { ...job.settings, output: event.target.value } })} disabled={busy}>{optionsForMode(job.descriptor, availableFormats, serverCapabilities, view).map(item => <option key={item} value={item}>{item.toUpperCase()}</option>)}</select>}
           <div className={`status-pill status-${job.status.toLowerCase()}`}>{job.status === "COMPLETED" && <Check size={13} />}{job.status === "FAILED" && <CircleAlert size={13} />}{job.status === "PROCESSING" ? job.stage === "uploading" ? t.uploading : job.progress != null ? `${Math.round(job.progress * 100)}%` : job.stage === "encoding" ? t.encoding : job.stage === "decoding" ? t.decoding : t.processing : t.status[job.status]}</div>
           <div className="row-actions">{groupKind && job.file.size > 0 && <><button className="icon-button" title={t.moveUp} aria-label={`${t.moveUp} ${job.file.name}`} onClick={() => moveJob(job.id, -1)} disabled={busy || visibleJobs[0]?.id === job.id}><ArrowUp size={15} /></button><button className="icon-button" title={t.moveDown} aria-label={`${t.moveDown} ${job.file.name}`} onClick={() => moveJob(job.id, 1)} disabled={busy || visibleJobs[visibleJobs.length - 1]?.id === job.id}><ArrowDown size={15} /></button></>}{job.status === "COMPLETED" && job.outputName && <button className="icon-button" title={t.download} aria-label={`${t.download} ${job.outputName}`} onClick={() => job.serverId ? downloadServerJob(job.serverId) : job.output && downloadBlob(job.output, job.outputName!)}><ArrowDownToLine size={18} /></button>}{(job.status === "QUEUED" || (job.status === "PROCESSING" && (job.stage === "uploading" || isLocal(job.descriptor.detectedType, job.settings.output)))) && <button className="icon-button" title={t.cancel} aria-label={`${t.cancel} ${job.file.name}`} onClick={() => cancelJob(job.id)}><X size={18} /></button>}{(job.status === "FAILED" || job.status === "CANCELLED") && job.descriptor.category !== "unsupported" && <button className="icon-button" title={t.retry} aria-label={`${t.retry} ${job.file.name}`} onClick={() => { patchJob(job.id, { status: "CREATED", error: undefined }); }}><RotateCcw size={17} /></button>}{!(job.serverId && job.status === "PROCESSING") && <button className="icon-button muted-action" title={t.remove} aria-label={`${t.remove} ${job.file.name}`} onClick={() => removeJob(job.id)}><Trash2 size={17} /></button>}</div>
