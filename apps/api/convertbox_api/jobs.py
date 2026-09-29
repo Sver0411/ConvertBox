@@ -39,7 +39,10 @@ class Job:
     error: str | None = None
     error_code: str | None = None
     created_at: float = field(default_factory=time.time)
+    queued_at: float | None = None
+    started_at: float | None = None
     completed_at: float | None = None
+    cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
 
     def transition(self, target: JobStatus) -> None:
         if self.status == target:
@@ -59,6 +62,21 @@ class Job:
 
 
 class JobManager:
+    @staticmethod
+    def _log_event(job: Job, event: str) -> None:
+        def size(path: Path) -> int:
+            try:
+                return path.stat().st_size
+            except OSError:
+                return 0
+
+        input_bytes = sum(size(path) for path in job.inputs)
+        output_bytes = size(job.output_path)
+        duration = round(job.completed_at - job.started_at, 3) if job.completed_at and job.started_at else None
+        log.info("job_event=%s job_id=%s input_format=%s output_format=%s operation=%s input_bytes=%s output_bytes=%s queued_at=%s started_at=%s completed_at=%s duration=%s status=%s error_code=%s",
+                 event, job.id, job.input_format, job.output_format, job.operation, input_bytes, output_bytes,
+                 job.queued_at, job.started_at, job.completed_at, duration, job.status.value, job.error_code)
+
     def __init__(self, root: Path = TEMP_ROOT, workers: int = 2, ttl: int = JOB_TTL) -> None:
         self.root = root
         self.ttl = ttl
@@ -108,6 +126,7 @@ class JobManager:
             if job.status == JobStatus.CREATED:
                 job.transition(JobStatus.VALIDATING)
             job.transition(JobStatus.QUEUED)
+            job.queued_at = time.time()
             self.jobs[job.id] = job
         try:
             self.queue.put_nowait(job.id)
@@ -116,6 +135,7 @@ class JobManager:
                 self.jobs.pop(job.id, None)
             shutil.rmtree(job.directory, ignore_errors=True)
             raise ConversionError("Server queue is full; retry shortly")
+        self._log_event(job, "queued")
 
     def get(self, job_id: str) -> Job | None:
         with self.lock:
@@ -128,6 +148,7 @@ class JobManager:
                 return False
             if job.status == JobStatus.PROCESSING:
                 raise ConversionError("Processing job cannot be cancelled")
+            job.cancel_event.set()
             job.transition(JobStatus.EXPIRED if job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED) else JobStatus.CANCELLED)
             self.jobs.pop(job_id, None)
         shutil.rmtree(job.directory, ignore_errors=True)
@@ -178,6 +199,8 @@ class JobManager:
                 continue
             with self.lock:
                 job.transition(JobStatus.PROCESSING)
+                job.started_at = time.time()
+            self._log_event(job, "started")
             try:
                 converter = self.registry.find(job.input_format, job.output_format)
                 if converter is None:
@@ -202,6 +225,7 @@ class JobManager:
                     job.transition(JobStatus.COMPLETED)
                     job.progress = 1.0
                     job.completed_at = time.time()
+                self._log_event(job, "completed")
             except ConversionError as exc:
                 log.warning("Job %s rejected: %s", job.id, exc)
                 job.output_path.unlink(missing_ok=True)
@@ -210,6 +234,7 @@ class JobManager:
                     job.error = str(exc).split(":", 1)[0]
                     job.error_code = exc.code
                     job.completed_at = time.time()
+                self._log_event(job, "failed")
             except Exception:
                 log.exception("Job %s failed", job.id)
                 job.output_path.unlink(missing_ok=True)
@@ -218,6 +243,7 @@ class JobManager:
                     job.error = "Server conversion failed"
                     job.error_code = "CONVERSION_FAILED"
                     job.completed_at = time.time()
+                self._log_event(job, "failed")
             finally:
                 self.queue.task_done()
 

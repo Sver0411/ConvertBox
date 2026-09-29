@@ -1,11 +1,11 @@
 # Conversion pipeline
 
-1. Browser `File` data is inspected by signature, extension and MIME. The server repeats independent checks after upload.
-2. The UI chooses a local route only for supported JPG/PNG/WebP jobs at or below 25 MB. Every other route is marked Server before conversion.
-3. Local jobs decode to pixels, enforce an 80-megapixel cap, calculate aspect-ratio-safe dimensions and encode with Canvas. Worker progress is stage-based because the browser encoder has no fractional callback. ImageBitmap is closed and object URLs are revoked.
-4. Server files are streamed to a random job directory in 1 MB chunks, subject to the upload cap. The request returns a job ID as soon as upload and validation finish; conversion runs in a background worker.
+1. Browser `File` data is inspected by signature, extension and MIME. JPEG, PNG and WebP dimensions are read from headers where possible. Animated WebP and APNG are rejected before the static Canvas route; the server also rejects animated GIF. The server repeats independent checks after upload.
+2. The UI chooses a local route only for supported JPG/PNG/WebP jobs at or below 25 MiB and within the estimated local memory budget. Every other route is marked Server before conversion.
+3. Local jobs reserve `max(input pixels, output pixels) × 12` bytes in a 256 MiB scheduler, then decode to pixels, enforce an 80-megapixel cap, calculate aspect-ratio-safe dimensions and encode with Canvas. Worker progress is stage-based because the browser encoder has no fractional callback. ImageBitmap is closed and object URLs are revoked. The estimate is not measured peak memory.
+4. An admission slot is acquired before multipart parsing. Active and waiting upload counts, IP rate, disk free space and temporary directory use are bounded. Server files are streamed to a random job directory in 1 MiB chunks, subject to the upload cap. Validation is moved off the FastAPI event loop. Rejected uploads remove their directory. The request returns a job ID after validation; conversion runs in a background worker.
 5. The converter registry selects ImageConverter, PdfConverter, OfficeConverter or MediaConverter. FFmpeg progress reports `out_time_us / probed duration`, clamped below 100% until output verification. The browser polls the job endpoint. PDF and Office tasks show processing state without invented percentages.
-6. Completed outputs are downloaded from the same-origin API proxy. Local results stay in page memory and may be zipped on demand if the total is under 200 MB. Server outputs are downloaded individually.
+6. Completed outputs are downloaded from the same-origin API proxy. Local results stay in page memory and may be zipped on demand if the input total is at most 64 MiB. ZIP construction still uses in-memory buffers. Server outputs are downloaded individually. Completed jobs with changed effective settings are marked stale in the UI; their previous result remains downloadable until reconversion succeeds.
 7. Completed/failed/cancelled server directories expire after the configured TTL. Startup also removes stale orphan directories.
 
-The upload API already streams, but interrupted uploads cannot resume. A future resumable-upload adapter can stage verified chunks in each job directory before calling `JobManager.submit`. The conversion protocol need not change.
+Interrupted uploads cannot resume. Server conversions in progress cannot yet be cancelled. A future resumable-upload adapter can stage verified chunks in each job directory before calling `JobManager.submit`.

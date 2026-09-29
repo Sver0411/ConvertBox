@@ -29,20 +29,23 @@ export const chinesePresetNames: Record<string, string> = {
   "audio-mp3": "MP3 192 kbps",
 };
 
-const KEY = "convertbox-presets-v1";
+const KEY = "convertbox-presets-v2";
+const LEGACY_KEY = "convertbox-presets-v1";
 
 export function loadCustomPresets(): Preset[] {
   try {
-    const value: unknown = JSON.parse(localStorage.getItem(KEY) ?? "[]");
+    const saved: unknown = JSON.parse(localStorage.getItem(KEY) ?? "null");
+    const value: unknown = saved && typeof saved === "object" && "version" in saved && saved.version === 2 && "presets" in saved ? saved.presets : JSON.parse(localStorage.getItem(LEGACY_KEY) ?? "[]");
     if (!Array.isArray(value)) return [];
     return value.filter((item): item is Preset => typeof item === "object" && item !== null &&
       typeof item.id === "string" && typeof item.name === "string" && item.name.length <= 50 &&
       ["image", "audio", "video"].includes(item.category) && typeof item.output === "string" &&
       typeof item.quality === "number" && typeof item.width === "number" && typeof item.height === "number" &&
-      typeof item.bitrate === "number" && typeof item.resolution === "number" && typeof item.videoQuality === "string" && typeof item.keepMetadata === "boolean" && item.custom === true).slice(0, 20);
+      typeof item.bitrate === "number" && typeof item.resolution === "number" && typeof item.videoQuality === "string" && item.custom === true)
+      .map(item => ({ ...item, keepMetadata: item.keepMetadata === true })).slice(0, 20);
   } catch { return []; }
 }
 
 export function storeCustomPresets(presets: Preset[]): void {
-  localStorage.setItem(KEY, JSON.stringify(presets.slice(0, 20)));
+  localStorage.setItem(KEY, JSON.stringify({ version: 2, presets: presets.slice(0, 20) }));
 }

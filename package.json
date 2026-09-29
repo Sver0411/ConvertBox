@@ -10,7 +10,10 @@
     "typecheck": "npm run typecheck -w apps/web",
     "test": "npm run test -w apps/web",
     "test:e2e": "npm run test:e2e -w apps/web",
-    "test:api": "cd apps/api && uv run --extra test python -m pytest tests"
+    "test:e2e:chromium": "npm run test:e2e -w apps/web -- --project=chromium-full --project=chromium-critical",
+    "test:api": "cd apps/api && uv run --extra test python -m pytest tests",
+    "test:load": "python3 tests/load/quick.py",
+    "test:load:extended": "cd apps/api && uv run --extra test python ../../tests/load/extended.py"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
