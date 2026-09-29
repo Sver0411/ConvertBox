@@ -34,9 +34,9 @@ One TypeScript source in `packages/conversion-core/src/capabilities.ts` drives t
 
 | Input | Output | Location | Caveat |
 | --- | --- | --- | --- |
-| JPEG | PNG, WebP | Local | WebP option requires browser encoder support |
-| PNG | JPEG, WebP | Local | JPEG replaces transparency with white |
-| WebP | JPEG, PNG | Local | Browser must decode WebP |
+| JPEG | JPEG, PNG, WebP | Local | Same-format output re-encodes; WebP requires encoder support |
+| PNG | JPEG, PNG, WebP | Local | Same-format output re-encodes; JPEG replaces transparency with white |
+| WebP | JPEG, PNG, WebP | Local | Same-format output re-encodes; browser must decode WebP |
 
 The browser probes actual encoding support. Formats outside this matrix are unsupported in Phase 1. Future server capabilities will be supplied by a versioned API endpoint and merged with local capabilities; there will not be independently handwritten front/back lists.
 
@@ -67,4 +67,4 @@ Unit tests cover signature recognition, mismatch rejection, capability matrix, f
 
 ## UI wireframe
 
-Initial: slim header, one headline, one large drop zone, privacy note. Workspace: header and add-files control, supported/unsupported count, shared format/quality settings, ordered file list with status and actions, aggregate progress, result downloads. Mobile stacks settings and list vertically. No inactive navigation or pretend controls. Visual direction: Apple-like typography, spacing and restrained color; a subtle liquid-glass treatment on the navigation and primary workspace surface only. Controls retain opaque-enough backgrounds and high contrast for readability; no decorative glass layer blocks interaction.
+Initial: slim text-only navigation, one headline, one large drop zone, privacy note. Workspace: header and add-files control, supported/unsupported count, shared format/quality settings, ordered file list with status and actions, aggregate progress, result downloads. Mobile stacks settings and list vertically. No inactive navigation or pretend controls. Chinese is the default language; a manual English switch covers all user-facing controls, states and errors. Copy is short and functional, without decorative eyebrow text. Visual direction: Apple-like typography, spacing and restrained color; a subtle liquid-glass treatment on the navigation and primary workspace surface only. Controls retain opaque-enough backgrounds and high contrast for readability; no decorative glass layer blocks interaction. Motion is used only for drag/drop and job feedback, and respects reduced-motion preferences.
