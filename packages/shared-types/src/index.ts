@@ -21,6 +21,7 @@ export type JobStatus = "CREATED" | "VALIDATING" | "QUEUED" | "PROCESSING" | "CO
 export type ConversionStage = "queued" | "uploading" | "processing" | "decoding" | "encoding" | "completed";
 
 export interface ConversionSettings {
+  background?: string;
   output: ImageFormat;
   quality: number;
   width?: number;

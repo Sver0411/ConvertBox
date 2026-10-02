@@ -19,7 +19,7 @@ A privacy-friendly, self-hosted file workbench for converting, compressing, insp
 | Archives | 创建/解压 ZIP，目录检查、选择下载 |
 | File utilities | 文件检查、分块 SHA-256/SHA-1/MD5、校验值核对、批量重命名预览与 ZIP 下载 |
 
-[工具目录](docs/TOOLS.md)从唯一前端 Tool Registry 生成：`npm run generate-tool-docs`。工具定义 46 项；服务端工具及输出由运行环境能力收窄，不可用工具不出现在工具中心。
+[工具目录](docs/TOOLS.md)从唯一前端 Tool Registry 生成：`npm run generate-tool-docs`。工具定义 48 项；服务端工具及输出由运行环境能力收窄，不可用工具保留入口并显示原因。
 
 ## 处理方式
 
@@ -83,3 +83,15 @@ API 测试使用真实图片、PDF、Office 和音视频文件并检查可读取
 - SVG 仅支持受限安全子集；系统级 CPU/内存沙箱隔离仍未实现。大型转换的吞吐与峰值内存尚未测量，参见 [BENCHMARKS.md](BENCHMARKS.md)。
 
 各阶段完成与未完成内容见 `PHASE_X_REVIEW.md`。设计基线见 [PHASE_0_DESIGN.md](PHASE_0_DESIGN.md)。
+
+## 桌面工作区优化
+
+所有工具使用同一套分类、文件、设置和结果界面。结果支持图片比较、PDF、音视频播放、文本和 ZIP 浏览；成功后更改输入或设置会保留上一份结果。分批添加文件、失败项重试、继续处理结果、记录中的任务恢复均已接入。
+
+音频裁剪支持真实波形、双手柄选区、精确时间、缩放和循环试听；视频支持播放器、时间轴缩略图、轻量 GIF 预览和指定画面抽帧。PDF 水印和页码提供位置示意及实际渲染检查，页面选择与手动页码共用状态。数据工具提供结构检查、错误定位和 CSV 表格预览。
+
+### 可选 OCR
+
+扫描 PDF 识别使用本机 Tesseract，输出可校对的 TXT 或 DOCX；不还原复杂排版。每次最多 20 页，按页处理。Ubuntu 可安装 `tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim`；macOS 已安装 Tesseract 后，可运行 `sh scripts/setup-ocr.sh` 下载固定版本的中英文模型。模型在 `apps/api/.ocr-data`，不提交 Git；也可以用 `CONVERTBOX_TESSDATA` 指向已有模型目录。模型下载不会启动 Docker。
+
+逐项对应两份审查的实现、验证和边界见 [工作区优化验收](docs/WORKBENCH_UX_REVIEW.md)。

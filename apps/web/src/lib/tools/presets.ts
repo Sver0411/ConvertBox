@@ -3,7 +3,7 @@ import {getTool,type ToolDefinition} from './registry';
 export interface ToolPreset {version:3;id:string;name:string;toolId:ToolDefinition['id'];settings:Record<string,string|number|boolean>}
 const KEY='convertbox-tool-presets-v3';
 export function safeSettings(settings:Record<string,unknown>):Record<string,string|number|boolean> {
- return Object.fromEntries(Object.entries(settings).filter(([key,value])=>!['password','confirm_password','text','expected'].includes(key)&&['string','number','boolean'].includes(typeof value)&& (typeof value!=='string'||value.length<4096))) as Record<string,string|number|boolean>;
+ return Object.fromEntries(Object.entries(settings).filter(([key,value])=>!['password','confirm_password','text','expected','media_duration','pdf_page_count'].includes(key)&&['string','number','boolean'].includes(typeof value)&& (typeof value!=='string'||value.length<4096))) as Record<string,string|number|boolean>;
 }
 export function loadToolPresets():ToolPreset[] {
  try {const saved:unknown=JSON.parse(localStorage.getItem(KEY)??'null');if(Array.isArray(saved))return saved.filter((item):item is ToolPreset=>!!item&&item.version===3&&typeof item.id==='string'&&typeof item.name==='string'&&!!getTool(item.toolId)&&!!item.settings).map(item=>({...item,settings:safeSettings(item.settings)})).slice(0,50);

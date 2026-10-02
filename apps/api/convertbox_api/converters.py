@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 import json
 import shutil
 import subprocess
@@ -29,6 +30,22 @@ class ConversionError(ValueError):
         super().__init__(message)
         self.code = code
 
+
+def run_process(request,command,timeout=120):
+    process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    deadline=__import__('time').monotonic()+timeout
+    try:
+        while True:
+            if request.cancelled():raise ConversionError('Processing cancelled','CANCELLED')
+            if __import__('time').monotonic()>deadline:raise ConversionError('Processing timed out','CONVERSION_FAILED')
+            try:
+                stdout,stderr=process.communicate(timeout=.25)
+                if process.returncode:raise ConversionError('Converter failed','CONVERSION_FAILED')
+                return subprocess.CompletedProcess(command,process.returncode,stdout,stderr)
+            except subprocess.TimeoutExpired:continue
+    finally:
+        if process.poll() is None:process.kill()
+        process.communicate()
 
 def _int_setting(request: ConversionRequest, key: str, default: int, minimum: int, maximum: int) -> int:
     try:
@@ -126,6 +143,8 @@ class ImageConverter:
                 scale = min(width / image.width, height / image.height)
                 output_width = max(1, round(image.width * scale))
                 output_height = max(1, round(image.height * scale))
+                if request.settings.get("stretch") is True:
+                    output_width, output_height = width, height
                 if output_width * output_height > MAX_IMAGE_PIXELS:
                     raise ConversionError("Output image exceeds 80 megapixels")
                 image = image.resize((output_width, output_height), Image.Resampling.LANCZOS)
@@ -134,7 +153,9 @@ class ImageConverter:
             if request.output_format == "jpg":
                 if image.mode in ("RGBA", "LA") or (image.mode == "P" and "transparency" in image.info):
                     rgba = image.convert("RGBA")
-                    white = Image.new("RGB", rgba.size, "white")
+                    color=str(request.settings.get('background','#ffffff'))
+                    if not re.fullmatch(r'#[0-9a-fA-F]{6}',color):raise ConversionError('Invalid background color','INVALID_SETTINGS')
+                    white = Image.new("RGB", rgba.size, color)
                     white.paste(rgba, mask=rgba.getchannel("A"))
                     image = white
                 else:
@@ -284,7 +305,7 @@ class OfficeConverter:
             "--outdir", str(request.output_path.parent), str(request.input_path),
         ]
         try:
-            result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
+            result = run_process(request,command,120)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ConversionError("Office converter unavailable or timed out") from exc
         finally:
@@ -333,11 +354,14 @@ class MediaConverter:
                 "ogg": ["-c:a", "libopus", "-b:a", f"{min(bitrate, 256)}k"],
                 "opus": ["-c:a", "libopus", "-b:a", f"{min(bitrate, 256)}k"],
             }
-            command += ["-vn", *audio_args[target]]
+            command += ["-map", f"0:a:{_int_setting(request, 'audio_track', 0, 0, 15)}", "-vn", *audio_args[target]]
+            channels = _int_setting(request,"channels",0,0,2)
+            if channels: command += ["-ac",str(channels)]
             sample_rate = _int_setting(request, "sample_rate", 0, 0, 48000)
             if sample_rate:
                 command += ["-ar", str(sample_rate)]
         else:
+            command += ["-map", "0:v:0", "-map", f"0:a:{_int_setting(request, 'audio_track', 0, 0, 15)}?"]
             quality = str(request.settings.get("video_quality", "high"))
             crf = {"very_high": (18, 24), "high": (23, 32), "medium": (28, 38), "low": (34, 44)}[quality]
             if target == "webm":
@@ -366,6 +390,11 @@ class MediaConverter:
         watchdog = threading.Timer(600, expire)
         watchdog.daemon = True
         watchdog.start()
+        def watch_cancel():
+            while process.poll() is None:
+                if request.cancelled():process.kill();return
+                threading.Event().wait(.2)
+        threading.Thread(target=watch_cancel,daemon=True).start()
         try:
             assert process.stdout is not None
             for line in process.stdout:

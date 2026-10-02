@@ -2,7 +2,7 @@
 
 ## Processing
 
-Data transformation, hash, ZIP and rename run in the browser. The UI labels local/server execution. Hybrid image tools use browser processing for static JPEG/PNG/WebP and the server for other inputs or ICC preservation. Server batches run sequentially; downloads remain direct links so large outputs are not loaded as browser Blobs.
+Data transformation, hash, ZIP and rename run in the browser. The UI uses task-oriented labels; help and upload status explain server processing. Hybrid image tools use browser processing for static JPEG/PNG/WebP and the server for other inputs or ICC preservation. Server batches run sequentially; downloads remain direct links so large outputs are not loaded as browser Blobs.
 
 Image selections are capped at 100; image batch inputs and retained outputs each at 64 MiB. ZIP create/rename may select up to 1000 entries within the ZIP byte cap. Hash remains chunked and accepts large individual files.
 
@@ -31,3 +31,15 @@ Tool favorites/recent/presets remain local. Version 3 tool presets import existi
 ## Scope
 
 No OCR, encrypted PDF unlocking, multipage TIFF editing, HTML rendering, TAR/GZ/7z extraction or workflow editor. GZIP/7z/RAR signatures are inspection-only. No account, third-party file processing API or cloud storage.
+
+
+## Preview and workflow controls
+
+- Preview downloads use an allowlist of passive image, PDF, audio, video and text MIME types, `nosniff`, and a sandbox CSP. SVG and unknown files remain attachment downloads.
+- PDF page rendering is bounded; normal preview renders one page at 640×800 maximum, organizer thumbnails at 160×200. At most 12 organizer thumbnails are shown at once.
+- Audio waveform computation streams mono PCM through FFmpeg and retains at most 4,096 peak values; browser preview never decodes an entire long recording into an AudioBuffer.
+- Route drafts are memory-only: at most three tools and 64 MiB of retained input/output blobs and text. Passwords are excluded. Persistent presets/history exclude passwords, input text, expected hashes and derived file duration/page counts.
+- Batch results preserve successful items and retry failed inputs. Repacking ZIP entries keeps validated paths; all packing and extracted content remain under existing byte/entry/CRC guards.
+- Processing cancellation signals the worker; external FFmpeg/Office/Tesseract processes are killed and reaped. Native image/PDF code completes its current step before cancellation is observed.
+- HTTP 429 keeps the production admission limit and returns Retry-After. The client can wait and retry twice, with cancellation. The E2E server alone uses a higher request limit for rapid synthetic test jobs.
+- Optional OCR uses installed Tesseract and fixed-version official language models. Rasterization is bounded to 20 pages, 144 DPI and 20 million pixels per page; temporary page images are deleted as each page finishes.

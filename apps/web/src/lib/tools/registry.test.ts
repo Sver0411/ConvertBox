@@ -21,3 +21,8 @@ describe("tool registry", () => {
     expect(getTool("unknown.stub")).toBeUndefined();
   });
 });
+it('finds task phrases and offers direct tools for real output capabilities',()=>{
+ expect(searchTools('PDF 转 Word').map(tool=>tool.id)).toContain('pdf.convert');
+ expect(searchTools('改大小').map(tool=>tool.id)).toContain('image.resize');
+ expect(getTool('document.convert')?.acceptedInputs).toContain('.xlsx');
+});

@@ -21,3 +21,11 @@ it('rejects ZIP expansion bombs and encryption before inflation',async()=>{
  const many=original.slice();const end=many.length-22;new DataView(many.buffer).setUint16(end+10,1001,true);expect(()=>archiveDirectory(many)).toThrow();
  expect(()=>transformData('data.yaml-json','x: .nan')).toThrow(/Non-finite/);
 });
+it('preserves nested archive paths and resolves collisions in the same folder',async()=>{
+ const blob=await createZip([{name:'a/note.txt',blob:new Blob(['A'])},{name:'b/note.txt',blob:new Blob(['B'])},{name:'a/note.txt',blob:new Blob(['C'])}],1,true);
+ const extracted=extractZip(new Uint8Array(await blob.arrayBuffer()));expect(extracted.map(file=>file.name)).toEqual(['a/note.txt','b/note.txt','a/note_1.txt']);expect(await extracted[1].blob.text()).toBe('B');
+});
+it('supports CSV delimiter/header configuration and explicit nested flattening',()=>{
+ expect(transformData('data.csv-json','A;2','2',{delimiter:';',header:false})).toContain('"column_2": "2"');
+ expect(transformData('data.json-csv','[{"user":{"name":"A"},"age":2}]','2',{flatten:true,columns:'age,user.name'})).toBe('age,user.name\r\n2,A');
+});

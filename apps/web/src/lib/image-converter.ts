@@ -46,7 +46,7 @@ function convertInWorker(
       if (event.data.blob) finish(undefined, event.data.blob);
     };
     worker.onerror = () => finish(new Error("Browser image worker failed. Please retry."));
-    worker.postMessage({ file, mime: OUTPUT_MIME[settings.output], quality: settings.quality / 100, maxPixels: MAX_PIXELS, width: settings.width ?? 0, height: settings.height ?? 0 });
+    worker.postMessage({ file, mime: OUTPUT_MIME[settings.output], quality: settings.quality / 100, maxPixels: MAX_PIXELS, width: settings.width ?? 0, height: settings.height ?? 0, background:settings.background });
     if (signal.aborted) abort();
   });
 }
@@ -86,7 +86,7 @@ async function convertOnMainThread(
     const context = canvas.getContext("2d");
     if (!context) throw new Error("Canvas is unavailable in this browser.");
     if (settings.output === "jpg") {
-      context.fillStyle = "#ffffff";
+      context.fillStyle = /^#[0-9a-f]{6}$/i.test(settings.background??"")?settings.background!:"#ffffff";
       context.fillRect(0, 0, outputWidth, outputHeight);
     }
     context.drawImage(bitmap ?? image!, 0, 0, outputWidth, outputHeight);

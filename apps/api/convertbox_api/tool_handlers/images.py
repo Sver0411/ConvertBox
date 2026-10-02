@@ -1,4 +1,5 @@
 import json
+import re
 from PIL import ExifTags, Image, ImageOps
 
 from ..capabilities import IMAGE_INPUTS
@@ -18,7 +19,9 @@ def save_image(image: Image.Image, request: ConversionRequest, *, icc: bytes | N
     if request.output_format == "jpg":
         if image.mode in ("RGBA", "LA") or (image.mode == "P" and "transparency" in image.info):
             rgba = image.convert("RGBA")
-            background = Image.new("RGB", rgba.size, "white")
+            color=str(request.settings.get('background','#ffffff'))
+            if not re.fullmatch(r'#[0-9a-fA-F]{6}',color):raise ConversionError('Invalid background color','INVALID_SETTINGS')
+            background = Image.new("RGB", rgba.size, color)
             background.paste(rgba, mask=rgba.getchannel("A"))
             image = background
         else:
@@ -43,11 +46,11 @@ def rotate_image(request: ConversionRequest) -> None:
 
 def flip_image(request: ConversionRequest) -> None:
     direction = request.settings.get("direction", "horizontal")
-    if direction not in ("horizontal", "vertical"):
+    if direction not in ("horizontal", "vertical", "none"):
         raise ConversionError("Invalid flip direction", "INVALID_SETTINGS")
     with ImageConverter._open(request.input_path) as source:
         image = ImageOps.exif_transpose(source)
-        flipped = ImageOps.mirror(image) if direction == "horizontal" else ImageOps.flip(image)
+        flipped = image.copy() if direction=="none" else ImageOps.mirror(image) if direction == "horizontal" else ImageOps.flip(image)
         save_image(flipped, request)
         flipped.close()
 
@@ -88,20 +91,31 @@ def image_metadata(request: ConversionRequest) -> None:
 def favicon(request: ConversionRequest) -> None:
     with ImageConverter._open(request.input_path) as source:
         image = ImageOps.exif_transpose(source).convert("RGBA")
-        image = ImageOps.pad(image, (256, 256), color=(0, 0, 0, 0))
+        mode=request.settings.get('fit','pad')
+        if mode not in ('pad','crop'):raise ConversionError('Invalid icon layout','INVALID_SETTINGS')
+        image = ImageOps.fit(image,(256,256)) if mode=='crop' else ImageOps.pad(image, (256, 256), color=(0, 0, 0, 0))
         image.save(request.output_path, "ICO", sizes=[(value, value) for value in (16, 32, 48, 64, 128, 256)])
         image.close()
 
 
 def compress(request: ConversionRequest) -> None:
-    ImageConverter().convert(request)
+    target=_int_setting(request,'target_kb',0,0,25600)*1024
+    if not target and not request.settings.get('background'):
+        ImageConverter().convert(request);return
+    with ImageConverter._open(request.input_path) as source:
+        image=ImageOps.exif_transpose(source)
+        quality=_int_setting(request,'quality',85,1,100)
+        save_image(image,request)
+        while target and request.output_format!='png' and request.output_path.stat().st_size>target and quality>10:
+            quality=max(10,quality-10);request.settings['quality']=quality;save_image(image,request)
+        image.close()
 
 
 def register_images(registry: ToolHandlerRegistry) -> None:
     output = ("jpg", "png", "webp")
-    registry.register(ToolHandler("image.compress", IMAGE_INPUTS, output, compress, frozenset({"quality", "width", "height"})))
+    registry.register(ToolHandler("image.compress", IMAGE_INPUTS, output, compress, frozenset({"quality", "width", "height", "background", "target_kb"})))
     registry.register(ToolHandler("image.rotate", IMAGE_INPUTS, output, rotate_image, frozenset({"rotation", "quality"})))
     registry.register(ToolHandler("image.flip", IMAGE_INPUTS, output, flip_image, frozenset({"direction", "quality"})))
     registry.register(ToolHandler("image.strip-metadata", IMAGE_INPUTS, output, strip_metadata, frozenset({"keep_icc", "quality"})))
     registry.register(ToolHandler("image.metadata", IMAGE_INPUTS, ("json",), image_metadata, allow_animation=True))
-    registry.register(ToolHandler("image.favicon", ("jpg", "png", "webp"), ("ico",), favicon))
+    registry.register(ToolHandler("image.favicon", ("jpg", "png", "webp"), ("ico",), favicon, frozenset({"fit"})))

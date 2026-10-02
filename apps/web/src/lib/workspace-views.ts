@@ -15,7 +15,7 @@ export function viewAccepts(view: ConversionView, descriptor: FileDescriptor): b
   if (view === "all") return true;
   if (view === "image") return descriptor.category === "image";
   if (view === "pdf") return descriptor.category === "pdf" || descriptor.category === "image";
-  if (view === "word") return ["doc", "docx", "odt", "pdf"].includes(type);
+  if (view === "word") return ["doc", "docx", "odt", "pdf", "xls", "xlsx", "ods", "ppt", "pptx", "odp"].includes(type);
   if (view === "audio") return descriptor.category === "audio" || descriptor.category === "video";
   return descriptor.category === "video";
 }
@@ -39,5 +39,5 @@ export function preferredOutput(view: ConversionView, descriptor: FileDescriptor
 }
 
 export const viewInputAccept: Record<ConversionView, string> = {
-  all: "", image: "image/*,.heic,.heif,.avif,.bmp,.gif", pdf: ".pdf,image/*,.heic,.heif,.avif", word: ".doc,.docx,.odt,.pdf", audio: "audio/*,video/*", video: "video/*,.mkv,.avi",
+  all: "", image: "image/*,.heic,.heif,.avif,.bmp,.gif", pdf: ".pdf,image/*,.heic,.heif,.avif", word: ".doc,.docx,.odt,.pdf,.xls,.xlsx,.ods,.ppt,.pptx,.odp", audio: "audio/*,video/*", video: "video/*,.mkv,.avi",
 };

@@ -58,16 +58,9 @@ test("WebP output follows runtime encoding capability", async ({ page }) => {
   await page.getByLabel("选择文件").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: fixture("sample.png") });
   await expect(page.locator(".file-row")).toHaveCount(1);
   const options = await page.getByLabel("目标格式", { exact: true }).locator("option").allTextContents();
-  if (!supported) {
-    // The server may still advertise WebP even when the browser cannot encode it.
-    if (options.includes("WEBP")) {
-      await page.getByLabel("目标格式", { exact: true }).selectOption("webp");
-      await expect(page.locator(".file-row")).toContainText("服务器");
-    }
-    return;
-  }
-  expect(options).toContain("WEBP");
-  await page.getByLabel("目标格式", { exact: true }).selectOption("webp");
+  if(!options.includes("WEBP")){expect(supported).toBe(false);return;}
+  await page.getByLabel("目标格式",{exact:true}).selectOption("webp");
+  if(!supported)await expect(page.locator(".file-row")).toContainText("服务器");
   await page.getByRole("button", { name: "开始转换" }).click();
   await expect(page.locator(".summary")).toContainText("1 个已完成");
   const pending = page.waitForEvent("download");

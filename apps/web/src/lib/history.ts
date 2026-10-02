@@ -9,9 +9,10 @@ export function legacyHistoryTool(format: string): string {
 }
 
 export interface HistoryEntry {
+  jobId?: string;
   schemaVersion?: number;
   toolId?: string;
-  status?: "COMPLETED" | "FAILED";
+  status?: "COMPLETED" | "FAILED" | "PARTIAL" | "CANCELLED";
   id: string;
   name: string;
   inputFormat: string;

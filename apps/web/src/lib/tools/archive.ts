@@ -1,4 +1,4 @@
-import { Unzip, UnzipInflate, zipSync } from "fflate";
+import { Unzip, UnzipInflate, zip } from "fflate";
 import { uniqueFilename } from "@core/filename";
 
 export const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
@@ -87,28 +87,36 @@ export function extractZip(bytes: Uint8Array, selected?: string[]): { name: stri
   return result;
 }
 
-export async function createZip(files: { name: string; blob: Blob }[]): Promise<Blob> {
+export async function createZip(files: { name: string; blob: Blob }[], level:number=0, preservePaths=true, signal?:AbortSignal): Promise<Blob> {
   if (files.length > MAX_ARCHIVE_ENTRIES || files.reduce((sum, file) => sum + file.blob.size, 0) > MAX_ARCHIVE_BYTES) throw new Error("ZIP input exceeds 64 MB or 1000 entries.");
   const entries: Record<string, Uint8Array> = Object.create(null);
   const used = new Set<string>();
-  for (const file of files) entries[uniqueFilename(safeArchivePath(file.name).split("/").pop()!, used)] = new Uint8Array(await file.blob.arrayBuffer());
-  return new Blob([new Uint8Array(zipSync(entries, { level: 0 }))], { type: "application/zip" });
+  for (const file of files) {
+    if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
+    const path=safeArchivePath(file.name),slash=path.lastIndexOf('/'),folder=preservePaths&&slash>=0?path.slice(0,slash+1):'';
+    const localUsed=new Set([...used].filter(name=>name.slice(0,name.lastIndexOf('/')+1)===folder).map(name=>name.slice(name.lastIndexOf('/')+1)));
+    const name=folder+uniqueFilename(path.slice(slash+1),localUsed);used.add(name);entries[name]=new Uint8Array(await file.blob.arrayBuffer());
+  }
+  return new Promise((resolve,reject)=>{
+    const stop=zip(entries,{level:Math.max(0,Math.min(9,level)) as 0|1|6},(error,data)=>{signal?.removeEventListener('abort',abort);if(error)reject(error);else if(data.byteLength>MAX_ARCHIVE_BYTES)reject(new Error('ZIP output exceeds 64 MB.'));else resolve(new Blob([new Uint8Array(data)],{type:'application/zip'}));});
+    const abort=()=>{stop();reject(new DOMException('Cancelled','AbortError'));};signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
+  });
 }
 
-export function renamedFiles(files: File[], settings: Record<string, unknown>): { name: string; blob: Blob }[] {
+export function renamedFiles(files: File[], settings: Record<string, unknown>): { name: string; blob: Blob; adjusted:boolean }[] {
   if (settings.mode === "replace" && !String(settings.find ?? "")) throw new Error("Find text cannot be empty.");
   const used = new Set<string>();
   return files.map((file, index) => {
     const dot = file.name.lastIndexOf(".");
     let stem = dot > 0 ? file.name.slice(0, dot) : file.name, extension = dot > 0 ? file.name.slice(dot) : "";
     const mode = settings.mode ?? "prefix";
-    if (mode === "sequence") stem = `${String(settings.prefix ?? "file_")}${String(index + Number(settings.start ?? 1)).padStart(3, "0")}`;
+    if (mode === "sequence") stem = `${String(settings.prefix ?? "file_")}${String(index + Number(settings.start ?? 1)).padStart(Math.max(1,Math.min(8,Number(settings.digits??3))), "0")}`;
     else if (mode === "replace") stem = stem.split(String(settings.find ?? "")).join(String(settings.replace ?? ""));
     else if (mode === "lowercase") { stem = stem.toLowerCase(); extension = extension.toLowerCase(); }
     else if (mode === "uppercase") { stem = stem.toUpperCase(); extension = extension.toUpperCase(); }
-    else if (mode === "date") stem = `${String(settings.date ?? new Date().toISOString().slice(0, 10))}_${stem}`;
+    else if (mode === "date") stem = `${String(settings.date || new Date().toLocaleDateString("sv-SE"))}_${stem}`;
     else stem = `${String(settings.prefix ?? "")}${stem}${String(settings.suffix ?? "")}`;
     const name = `${stem}${extension}`.replace(/[\x00-\x1f/\\<>:"|?*]/g, "_").slice(0, 200);
-    return { name: uniqueFilename(name || `file_${index + 1}`, used), blob: file };
+    const unique=uniqueFilename(name || `file_${index + 1}`,used);return {name:unique,blob:file,adjusted:unique!==name};
   });
 }

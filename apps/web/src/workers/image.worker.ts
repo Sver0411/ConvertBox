@@ -1,6 +1,6 @@
 import { outputDimensions } from "@core/dimensions";
 
-type ImageWorkerRequest = { file: File; mime: string; quality: number; maxPixels: number; width: number; height: number };
+type ImageWorkerRequest = { background?:string; file: File; mime: string; quality: number; maxPixels: number; width: number; height: number };
 
 self.onmessage = async (event: MessageEvent<ImageWorkerRequest>) => {
   let bitmap: ImageBitmap | undefined;
@@ -19,7 +19,7 @@ self.onmessage = async (event: MessageEvent<ImageWorkerRequest>) => {
     const context = canvas.getContext("2d");
     if (!context) throw new Error("Canvas is unavailable in this browser.");
     if (event.data.mime === "image/jpeg") {
-      context.fillStyle = "#ffffff";
+      context.fillStyle = /^#[0-9a-f]{6}$/i.test(event.data.background??"")?event.data.background!:"#ffffff";
       context.fillRect(0, 0, width, height);
     }
     context.drawImage(bitmap, 0, 0, width, height);

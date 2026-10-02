@@ -13,7 +13,7 @@ export async function editImage(file: File, toolId: string, settings: Record<str
   if (!["jpg", "png", "webp"].includes(format) || !browserCanEncode(format)) throw new Error("This browser does not support the selected output format.");
   const cost = estimatedImageBytes(descriptor, { output: format, quality: Number(settings.quality ?? 85) });
   return scheduler.run(cost, signal, async () => {
-    if (toolId === "image.compress" || toolId === "image.strip-metadata") return convertImage(file, { output: format, quality: Number(settings.quality ?? 85) }, () => {}, signal);
+    if (toolId === "image.compress" || toolId === "image.strip-metadata") return convertImage(file, { output: format, quality: Number(settings.quality ?? 85),background:String(settings.background??"#ffffff") }, () => {}, signal);
     const image = await createImageBitmap(file);
     let canvas: HTMLCanvasElement | null = null;
     try {
@@ -24,7 +24,7 @@ export async function editImage(file: File, toolId: string, settings: Record<str
       canvas.height = rotation % 180 ? image.width : image.height;
       const context = canvas.getContext("2d");
       if (!context) throw new Error("Canvas is unavailable.");
-      if (format === "jpg") { context.fillStyle = "#fff"; context.fillRect(0, 0, canvas.width, canvas.height); }
+      if (format === "jpg") { context.fillStyle = /^#[0-9a-f]{6}$/i.test(String(settings.background))?String(settings.background):"#ffffff"; context.fillRect(0, 0, canvas.width, canvas.height); }
       context.translate(canvas.width / 2, canvas.height / 2);
       context.rotate(rotation * Math.PI / 180);
       if (toolId === "image.flip") context.scale(settings.direction === "horizontal" ? -1 : 1, settings.direction === "vertical" ? -1 : 1);

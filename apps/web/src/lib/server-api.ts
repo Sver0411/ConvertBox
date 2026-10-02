@@ -46,7 +46,7 @@ export async function getServerCapabilities(): Promise<ServerCapabilities> {
 
 export async function createServerJob(
   files: File[], output: string, operation: string,
-  settings: Record<string, string | number | boolean>, signal: AbortSignal, toolId?: string,
+  settings: Record<string, string | number | boolean>, signal: AbortSignal, toolId?: string, onRateWait?:()=>void,
 ): Promise<ServerJob> {
   const form = new FormData();
   for (const file of files) form.append("files", file, file.name);
@@ -54,7 +54,12 @@ export async function createServerJob(
   form.append("output", output);
   form.append("operation", operation);
   form.append("settings", JSON.stringify(settings));
-  return (await check(await fetch("/api/jobs", { method: "POST", body: form, signal }))).json() as Promise<ServerJob>;
+  for(let attempt=0;;attempt++){
+    const response=await fetch("/api/jobs",{method:"POST",body:form,signal});
+    if(response.status!==429||attempt>=2)return (await check(response)).json() as Promise<ServerJob>;
+    onRateWait?.();
+    await new Promise<void>((resolve,reject)=>{const stop=()=>{clearTimeout(timer);reject(new DOMException('Cancelled','AbortError'));};const timer=setTimeout(()=>{signal.removeEventListener('abort',stop);resolve();},Math.max(1,Math.min(60,Number(response.headers.get('Retry-After'))||60))*1000);signal.addEventListener('abort',stop,{once:true});if(signal.aborted)stop();});
+  }
 }
 
 export async function pollServerJob(id: string, onUpdate: (job: ServerJob) => void, signal: AbortSignal): Promise<ServerJob> {

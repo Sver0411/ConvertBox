@@ -150,7 +150,8 @@ class JobManager:
             if not job:
                 return False
             if job.status == JobStatus.PROCESSING:
-                raise ConversionError("Processing job cannot be cancelled")
+                job.cancel_event.set()
+                return True
             job.settings.pop("password", None)
             job.cancel_event.set()
             job.transition(JobStatus.EXPIRED if job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED) else JobStatus.CANCELLED)
@@ -214,6 +215,7 @@ class JobManager:
                     input_format=job.input_format, output_format=job.output_format,
                     settings=job.settings, input_paths=job.inputs, operation=job.operation,
                     on_progress=lambda fraction: self._set_progress(job, fraction),
+                    cancelled=job.cancel_event.is_set,
                 )
                 converter.validate(request)
                 if job.input_format in VIDEO_INPUTS:
@@ -221,6 +223,7 @@ class JobManager:
                         converter.convert(request)
                 else:
                     converter.convert(request)
+                if job.cancel_event.is_set():raise ConversionError("Processing cancelled", "CANCELLED")
                 if not job.output_path.is_file() or job.output_path.stat().st_size == 0:
                     raise ConversionError("Converter produced no output")
                 if job.output_path.stat().st_size > config.MAX_OUTPUT_SIZE:
@@ -234,7 +237,7 @@ class JobManager:
                 log.warning("Job %s rejected: %s", job.id, exc)
                 job.output_path.unlink(missing_ok=True)
                 with self.lock:
-                    job.transition(JobStatus.FAILED)
+                    job.transition(JobStatus.CANCELLED if job.cancel_event.is_set() else JobStatus.FAILED)
                     job.error = str(exc).split(":", 1)[0]
                     job.error_code = exc.code
                     job.completed_at = time.time()
@@ -243,7 +246,7 @@ class JobManager:
                 log.exception("Job %s failed", job.id)
                 job.output_path.unlink(missing_ok=True)
                 with self.lock:
-                    job.transition(JobStatus.FAILED)
+                    job.transition(JobStatus.CANCELLED if job.cancel_event.is_set() else JobStatus.FAILED)
                     job.error = "Server conversion failed"
                     job.error_code = "CONVERSION_FAILED"
                     job.completed_at = time.time()
@@ -253,5 +256,6 @@ class JobManager:
                 self.queue.task_done()
 
     def _set_progress(self, job: Job, fraction: float) -> None:
+        if job.cancel_event.is_set():raise ConversionError("Processing cancelled","CANCELLED")
         with self.lock:
             job.progress = fraction

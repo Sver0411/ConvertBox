@@ -10,7 +10,8 @@ export function Preview({blob,alt}: {blob: Blob;alt:string}) {
   if (!url) return null;
   // SVG is never embedded in the preview surface.
   // eslint-disable-next-line @next/next/no-img-element
-  if (['image/png','image/jpeg','image/webp'].includes(blob.type)) return <img className="result-preview" src={url} alt={alt}/>;
+  if (['image/png','image/jpeg','image/webp','image/gif','image/x-icon','image/vnd.microsoft.icon'].includes(blob.type)) return <img className="result-preview" src={url} alt={alt}/>;
+  if(blob.type==='application/pdf')return <iframe className="result-document" src={url} title={alt}/>;
   if (blob.type.startsWith('audio/')) return <audio controls src={url}/>;
   if (blob.type.startsWith('video/')) return <video controls src={url}/>;
   return null;

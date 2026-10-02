@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install uv
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg libreoffice-writer libreoffice-calc libreoffice-impress fonts-liberation libcairo2
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg libreoffice-writer libreoffice-calc libreoffice-impress fonts-liberation libcairo2 tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim
       - run: npm ci
       - run: uv sync --project apps/api --extra test
       - run: npm run generate-tool-docs -- --check
@@ -33,6 +33,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg libreoffice-writer libreoffice-calc libreoffice-impress fonts-liberation libcairo2
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg libreoffice-writer libreoffice-calc libreoffice-impress fonts-liberation libcairo2 tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim
       - run: python -m pip install -e './apps/api[test]'
       - run: cd apps/api && python -m pytest tests

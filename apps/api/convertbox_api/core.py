@@ -41,6 +41,7 @@ class ConversionRequest:
     input_paths: tuple[Path, ...] = ()
     operation: str = "convert"
     on_progress: Callable[[float], None] | None = None
+    cancelled: Callable[[], bool] = lambda: False
 
 
 class Converter(Protocol):

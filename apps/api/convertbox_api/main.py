@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import mimetypes
 import asyncio
 import tempfile
 from contextlib import asynccontextmanager
@@ -48,7 +49,7 @@ async def admit_upload(request: Request, call_next):
             await asyncio.to_thread(check_storage, manager.root)
             return await call_next(request)
     except ApiError as exc:
-        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers={"Retry-After":"60"} if exc.status_code==429 else {})
 
 
 @app.get("/health")
@@ -105,7 +106,7 @@ async def create_job(
         parsed = json.loads(settings)
         if not isinstance(parsed, dict) or len(settings) > (16384 if tool else 4096):
             raise ValueError()
-        allowed = {"quality", "width", "height", "pages", "dpi", "rotation", "bitrate", "sample_rate", "resolution", "fps", "video_quality", "page_size", "orientation", "margin", "keep_metadata"}
+        allowed = {"quality", "width", "height", "pages", "dpi", "rotation", "bitrate", "sample_rate", "resolution", "fps", "video_quality", "page_size", "orientation", "margin", "keep_metadata", "audio_track", "channels", "background", "stretch"}
         if tool:
             allowed = tool.settings
         parsed = {key: value for key, value in parsed.items() if key in allowed and isinstance(value, (str, int, float, bool))}
@@ -197,11 +198,14 @@ def get_job(job_id: str) -> dict[str, object]:
 
 
 @app.get("/jobs/{job_id}/download")
-def download_job(job_id: str) -> FileResponse:
+def download_job(job_id: str, preview: bool = False) -> FileResponse:
     job = manager.get(job_id)
     if not job or job.status != JobStatus.COMPLETED or not job.output_path.is_file():
         raise ApiError(404, "JOB_NOT_FOUND", "Result not found or expired.")
-    return FileResponse(job.output_path, filename=job.output_name, media_type="application/octet-stream")
+    mime = mimetypes.guess_type(job.output_name)[0] or "application/octet-stream"
+    allowed = {"application/pdf", "image/png", "image/jpeg", "image/webp", "image/gif", "image/vnd.microsoft.icon", "image/x-icon", "audio/mpeg", "audio/wav", "audio/x-wav", "audio/ogg", "video/mp4", "video/webm", "text/plain"}
+    inline = preview and mime in allowed
+    return FileResponse(job.output_path, filename=job.output_name, media_type=mime if inline else "application/octet-stream", content_disposition_type="inline" if inline else "attachment", headers={"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox"} if inline else {})
 
 
 @app.delete("/jobs/{job_id}", status_code=204)

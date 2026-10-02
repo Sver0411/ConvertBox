@@ -1,6 +1,6 @@
 # Tool Catalog
 
-Generated from the frontend Tool Registry. Run `npm run generate-tool-docs` after changes. Server tools are shown only when the running server advertises them.
+Generated from the frontend Tool Registry. Run `npm run generate-tool-docs` after changes. Unavailable server tools remain visible with a status label.
 
 | ID | 中文 | English | Inputs | Result | Processing | Resource | Status |
 |---|---|---|---|---|---|---|---|
@@ -18,6 +18,8 @@ Generated from the frontend Tool Registry. Run `npm run generate-tool-docs` afte
 | pdf.page-numbers | 添加 PDF 页码 | Add PDF page numbers | application/pdf | file | server | heavy | Implemented |
 | pdf.extract-images | 提取 PDF 内嵌图片 | Extract embedded PDF images | application/pdf | archive | server | heavy | Implemented |
 | pdf.metadata | PDF 元数据 | PDF metadata | application/pdf | report | server | heavy | Implemented |
+| pdf.unlock | 解锁 PDF | Unlock PDF | application/pdf | file | server | heavy | Implemented |
+| pdf.ocr | 扫描 PDF 识别 | Recognize scanned PDF | application/pdf | file | server | heavy | Implemented |
 | pdf.protect | PDF 密码保护 | Password protect PDF | application/pdf | file | server | heavy | Implemented |
 | audio.trim | 裁剪音频 | Trim audio | audio/* | file | server | medium | Implemented |
 | audio.merge | 合并音频 | Merge audio | audio/* | file | server | medium | Implemented |
@@ -46,7 +48,7 @@ Generated from the frontend Tool Registry. Run `npm run generate-tool-docs` afte
 | pdf.split | 拆分 PDF | Split PDF | application/pdf | archive | server | medium | Implemented |
 | pdf.rotate | 旋转 PDF 页面 | Rotate PDF pages | application/pdf | file | server | medium | Implemented |
 | pdf.compress | 优化 PDF | Optimize PDF | application/pdf | file | server | medium | Implemented |
-| document.convert | 文档转 PDF | Documents to PDF | .doc, .docx, .odt, .xls, .xlsx, .ods, .ppt, .pptx, .odp | file | server | medium | Implemented |
+| document.convert | 文档转换 | Convert documents | .pdf, .doc, .docx, .odt, .xls, .xlsx, .ods, .ppt, .pptx, .odp | file | server | medium | Implemented |
 | audio.convert | 音频转换 | Convert audio | audio/* | file | server | medium | Implemented |
 | video.convert | 视频转换 | Convert video | video/* | file | server | heavy | Implemented |
 | video.extract-audio | 提取视频音频 | Extract video audio | video/* | file | server | medium | Implemented |

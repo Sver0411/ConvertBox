@@ -42,7 +42,7 @@ function isLocal(input: string, output: string): boolean {
 }
 
 function canUseLocal(descriptor: FileDescriptor, settings: { output: string; width?: number; height?: number; quality: number }, bytes: number, keepMetadata: boolean): boolean {
-  return isLocal(descriptor.detectedType, settings.output) && bytes <= MAX_INPUT_SIZE && !keepMetadata && estimatedImageBytes(descriptor, settings) <= DEFAULT_LOCAL_MEMORY_BUDGET;
+  return isLocal(descriptor.detectedType, settings.output) && browserCanEncode(settings.output as ImageFormat) && bytes <= MAX_INPUT_SIZE && !keepMetadata && estimatedImageBytes(descriptor, settings) <= DEFAULT_LOCAL_MEMORY_BUDGET;
 }
 
 export default function Workspace({ initialView = "all", initialOperation = "convert", initialToolId }: { initialView?: ConversionView; initialOperation?: string; initialToolId?: ToolDefinition["id"] } = {}) {
