@@ -144,11 +144,13 @@ class JobManager:
         with self.lock:
             return self.jobs.get(job_id)
 
-    def delete(self, job_id: str) -> bool:
+    def delete(self, job_id: str, cancel_only: bool = False) -> bool:
         with self.lock:
             job = self.jobs.get(job_id)
             if not job:
                 return False
+            if cancel_only and job.status == JobStatus.COMPLETED:
+                return True
             if job.status == JobStatus.PROCESSING:
                 job.cancel_event.set()
                 return True

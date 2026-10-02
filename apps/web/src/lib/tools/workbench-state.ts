@@ -16,7 +16,8 @@ export function storeDraft(id:string,value:Draft){
 export function readDraft(id:string){return drafts.get(id);}
 let handoff:File[]=[];
 export function transferFiles(files:File[]){handoff=files;}
-export function takeFiles(){const next=handoff;handoff=[];return next;}
+// Development Strict Mode replays mount effects before this microtask runs.
+export function takeFiles(){const next=handoff;queueMicrotask(()=>{if(handoff===next)handoff=[];});return next;}
 export interface SavedTask {id:string;toolId:string;name:string;settings:Record<string,string|number|boolean>;createdAt:number}
 export function tasks():SavedTask[]{try{const value=JSON.parse(localStorage.getItem('convertbox-tasks')??'[]');return Array.isArray(value)?value.filter(item=>item&&typeof item.id==='string'&&typeof item.toolId==='string'&&typeof item.name==='string'&&typeof item.createdAt==='number'&&item.settings&&typeof item.settings==='object').slice(0,50):[]}catch{return []}}
 export function rememberTask(task:SavedTask){try{localStorage.setItem('convertbox-tasks',JSON.stringify([task,...tasks().filter(item=>item.id!==task.id)].slice(0,50)))}catch{}}

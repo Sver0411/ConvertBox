@@ -85,6 +85,6 @@ export function downloadServerJob(id: string): void {
   anchor.remove();
 }
 
-export async function deleteServerJob(id: string): Promise<void> {
-  await check(await fetch(`/api/jobs/${encodeURIComponent(id)}`, { method: "DELETE" }));
+export async function deleteServerJob(id: string, cancelOnly = false): Promise<void> {
+  await check(await fetch(`/api/jobs/${encodeURIComponent(id)}${cancelOnly ? "?cancel_only=true" : ""}`, { method: "DELETE" }));
 }

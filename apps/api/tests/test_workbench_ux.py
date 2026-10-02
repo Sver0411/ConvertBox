@@ -96,3 +96,21 @@ def test_external_process_cancellation_kills_and_reaps_child(tmp_path):
     request=ConversionRequest(tmp_path/'input',tmp_path/'output','txt','txt',{},cancelled=lambda:time.monotonic()-started>.3)
     with pytest.raises(ConversionError) as error:run_process(request,[sys.executable,'-c','import time;time.sleep(10)'],20)
     assert error.value.code=='CANCELLED' and time.monotonic()-started<3
+
+
+def test_cancel_only_preserves_completed_result_but_delete_removes_it(tmp_path):
+    manager = JobManager(root=tmp_path / 'jobs', workers=1)
+    directory = tmp_path / 'completed'
+    directory.mkdir()
+    output = directory / 'result.png'
+    output.write_bytes(b'completed result')
+    job = Job(id='completed-test', directory=directory, inputs=(), input_format='png', output_format='png', output_name='result.png', output_path=output, operation='convert', settings={})
+    job.status = JobStatus.COMPLETED
+    manager.jobs[job.id] = job
+    assert manager.delete(job.id, cancel_only=True)
+    assert manager.get(job.id) is job
+    assert output.read_bytes() == b'completed result'
+    assert not job.cancel_event.is_set()
+    assert manager.delete(job.id)
+    assert manager.get(job.id) is None
+    assert not directory.exists()

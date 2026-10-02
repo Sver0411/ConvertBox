@@ -209,9 +209,9 @@ def download_job(job_id: str, preview: bool = False) -> FileResponse:
 
 
 @app.delete("/jobs/{job_id}", status_code=204)
-def delete_job(job_id: str) -> None:
+def delete_job(job_id: str, cancel_only: bool = False) -> None:
     try:
-        if not manager.delete(job_id):
+        if not manager.delete(job_id, cancel_only=cancel_only):
             raise ApiError(404, "JOB_NOT_FOUND", "Job not found.")
     except ConversionError as exc:
         raise ApiError(409, "CANNOT_CANCEL", str(exc)) from exc

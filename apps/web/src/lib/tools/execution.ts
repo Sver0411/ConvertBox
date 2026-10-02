@@ -13,7 +13,7 @@ import type {ImageFormat} from '@shared/index';
 import {safeSettings} from './presets';
 import {rememberTask} from './workbench-state';
 const scheduler=new LocalImageScheduler(DEFAULT_LOCAL_MEMORY_BUDGET,1);
-export interface ExecutionEvents {stage?:(value:string)=>void;job?:(job:ServerJob)=>void;item?:(index:number,result:ToolResult|undefined,error?:string)=>void}
+export interface ExecutionEvents {stage?:(value:string)=>void;job?:(job:ServerJob)=>void;finished?:(id:string)=>void;item?:(index:number,result:ToolResult|undefined,error?:string)=>void}
 export async function executeTool(request:ToolExecutionRequest,signal:AbortSignal,progress:(value:number)=>void,events:ExecutionEvents={}):Promise<ToolResult>{
  const {toolId,files,settings}=request,tool=getTool(toolId);if(!tool)throw new Error('Unknown tool');validateToolInputs(tool,files);
  if(toolId.startsWith('data.')){
@@ -69,6 +69,7 @@ export async function executeTool(request:ToolExecutionRequest,signal:AbortSigna
  const job=await createServerJob(files,output,tool.operation==='resize'?'convert':tool.operation,clean,signal,tool.workspace?undefined:toolId,()=>events.stage?.('rate-wait'));
  events.job?.(job);rememberTask({id:job.id,toolId,name:files.map(file=>file.name).join(', '),settings:safeSettings(resolved),createdAt:Date.now()});
  const completed=await pollServerJob(job.id,value=>{events.stage?.(value.status.toLowerCase());progress(value.progress??0);},signal);
+ events.finished?.(job.id);
  if(completed.status!=='COMPLETED')throw new ServerApiError(completed.error??'Processing failed',completed.errorCode??'CONVERSION_FAILED',400);
  if(output==='json'){
   const response=await fetch(`/api/jobs/${job.id}/download`,{signal});if(!response.ok||Number(response.headers.get('content-length'))>16*1024*1024)throw new Error('Report unavailable or too large');
