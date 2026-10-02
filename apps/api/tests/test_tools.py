@@ -104,3 +104,11 @@ def test_svg_rasterization_if_available(tmp_path):
     source=tmp_path/'source.svg';source.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><rect width="20" height="10" fill="red"/></svg>')
     target=tmp_path/'result.png';rasterize(source,target)
     with Image.open(target) as image: assert image.size==(20,10) and image.getpixel((5,5))[:3]==(255,0,0)
+
+def test_strip_palette_preserves_pixels_and_flip_changes_order(tmp_path):
+    registry=make_tool_registry();source=tmp_path/'palette.png';target=tmp_path/'clean.png'
+    palette=Image.new('P',(2,1));palette.putpalette([255,0,0,0,0,255]+[0]*762);palette.putdata([0,1]);palette.save(source)
+    registry.get('image.strip-metadata').convert(ConversionRequest(source,target,'png','png',{}))
+    with Image.open(target) as image: assert image.convert('RGB').getpixel((0,0))==(255,0,0) and image.convert('RGB').getpixel((1,0))==(0,0,255)
+    registry.get('image.flip').convert(ConversionRequest(source,target,'png','png',{'direction':'horizontal'}))
+    with Image.open(target) as image: assert image.convert('RGB').getpixel((0,0))==(0,0,255)

@@ -44,10 +44,20 @@ for (const [route,name,file] of [
  if(route==='pdf/watermark')await page.getByLabel('水印文字',{exact:true}).fill('CONFIDENTIAL');
  if(route==='audio/trim')await page.getByLabel('结束时间',{exact:true}).fill('00:00:00.5');
  if(route==='video/gif')await page.getByLabel('时长（秒，最多 15）',{exact:true}).fill('1');
- if(route==='image/crop')await expect(page.locator('.crop-surface img')).toBeVisible();
+ if(route==='image/crop'){await expect(page.locator('.crop-surface img')).toBeVisible();await expect(page.getByRole('button',{name:'调整裁剪框大小'})).toBeVisible();}
  await page.getByRole('button',{name:'开始处理',exact:true}).click();await expect(page.locator('.tool-result')).toBeVisible({timeout:60000});await expect(page.locator('.tool-page').getByRole('alert')).toHaveCount(0);
  if(route==='file/hash')await expect(page.locator('.tool-result')).toContainText('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
  if(route==='image/metadata')await expect(page.locator('.tool-result')).toContainText('宽度');
  await page.getByLabel('主题',{exact:true}).selectOption('dark');await expect(page.locator('html')).toHaveAttribute('data-theme','dark');if(route==='image/crop')await page.screenshot({path:'../../docs/screenshots/workbench-crop.png'});
 });
 for(const [route,input,result] of [['json-format','{"a":1}','"a": 1'],['csv-json','name,age\nA,20','"name": "A"']] as const)test(`data ${route}`,async({page})=>{await page.goto(`/tools/data/${route}`);await page.getByLabel('输入文本',{exact:true}).fill(input);await page.getByRole('button',{name:'开始处理'}).click();await expect(page.locator('.tool-result')).toContainText(result);});
+
+test('visual crop exports square pixels and free resize handle responds',async({page})=>{
+ await page.goto('/tools/image/crop');
+ const bytes=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=96;canvas.height=64;const ctx=canvas.getContext('2d')!;ctx.fillStyle='red';ctx.fillRect(0,0,48,64);ctx.fillStyle='blue';ctx.fillRect(48,0,48,64);return canvas.toDataURL('image/png').split(',')[1];});
+ await page.getByLabel('选择文件',{exact:true}).setInputFiles({name:'crop.png',mimeType:'image/png',buffer:Buffer.from(bytes,'base64')});
+ const handle=page.getByRole('button',{name:'调整裁剪框大小'});await expect(handle).toBeVisible();const before=await handle.boundingBox();await page.mouse.move(before!.x+10,before!.y+10);await page.mouse.down();await page.mouse.move(before!.x+30,before!.y+25);await page.mouse.up();const after=await handle.boundingBox();expect(after!.x).toBeGreaterThan(before!.x);
+ await page.getByLabel('比例',{exact:true}).selectOption('1');
+ await page.getByRole('button',{name:'开始处理',exact:true}).click();await expect(page.locator('.tool-result')).toBeVisible();
+ const dimensions=await page.locator('.result-preview').evaluate((image:HTMLImageElement)=>[image.naturalWidth,image.naturalHeight]);expect(dimensions[0]).toBe(dimensions[1]);expect(dimensions[0]).toBeGreaterThan(0);
+});

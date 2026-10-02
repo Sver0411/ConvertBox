@@ -20,7 +20,8 @@ export function archiveDirectory(bytes: Uint8Array): ArchiveEntry[] {
   if (end < 0) throw new Error("Invalid ZIP directory.");
   const count = view.getUint16(end + 10, true), directorySize = view.getUint32(end + 12, true);
   let offset = view.getUint32(end + 16, true), total = 0;
-  if (view.getUint16(end + 4, true) || view.getUint16(end + 6, true) || count === 65535 || count > MAX_ARCHIVE_ENTRIES || offset + directorySize !== end) throw new Error("Multi-part, ZIP64 or oversized ZIP is unsupported.");
+  if (view.getUint16(end + 4, true) || view.getUint16(end + 6, true) || view.getUint16(end + 8,true)!==count || count === 65535 || count > MAX_ARCHIVE_ENTRIES || offset + directorySize !== end) throw new Error("Multi-part, ZIP64 or oversized ZIP is unsupported.");
+  const centralStart = offset;
   const result: ArchiveEntry[] = [], names = new Set<string>();
   for (let index = 0; index < count; index++) {
     if (offset + 46 > end || view.getUint32(offset, true) !== 0x02014b50) throw new Error("Invalid ZIP entry.");
@@ -33,9 +34,10 @@ export function archiveDirectory(bytes: Uint8Array): ArchiveEntry[] {
     if (names.has(name)) throw new Error("ZIP contains duplicate paths.");
     names.add(name);
     if (localOffset + 30 > end || view.getUint32(localOffset, true) !== 0x04034b50) throw new Error("Invalid ZIP local header.");
+    if (view.getUint16(localOffset+6,true)!==flags || view.getUint16(localOffset+8,true)!==method || (method===0&&compressed!==size)) throw new Error("ZIP local flags or sizes do not match.");
     const localNameLength = view.getUint16(localOffset + 26, true), localExtraLength = view.getUint16(localOffset + 28, true);
     const localName = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(localOffset + 30, localOffset + 30 + localNameLength));
-    if (localName !== name || localOffset + 30 + localNameLength + localExtraLength + compressed > end) throw new Error("ZIP headers do not match.");
+    if (localName !== name || localOffset + 30 + localNameLength + localExtraLength + compressed > centralStart) throw new Error("ZIP headers do not match.");
     total += size;
     if (total > MAX_ARCHIVE_BYTES || size > MAX_ARCHIVE_BYTES || compressed === 0xffffffff || size === 0xffffffff) throw new Error("Uncompressed ZIP exceeds 64 MB.");
     result.push({ name, compressed, size, crc: view.getUint32(offset + 16, true) });
@@ -45,12 +47,10 @@ export function archiveDirectory(bytes: Uint8Array): ArchiveEntry[] {
   return result;
 }
 
+const crcTable = Uint32Array.from({length:256},(_,value)=>{let crc=value;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^(crc&1?0xedb88320:0);return crc>>>0;});
 function crc32(data: Uint8Array): number {
   let crc = 0xffffffff;
-  for (const byte of data) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-  }
+  for (const byte of data) crc=(crc>>>8)^crcTable[(crc^byte)&255];
   return (crc ^ 0xffffffff) >>> 0;
 }
 

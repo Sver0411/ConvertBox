@@ -76,6 +76,12 @@ def image_metadata(request: ConversionRequest) -> None:
         exif = {ExifTags.TAGS.get(key, str(key)): str(value)[:1024] for key, value in image.getexif().items()}
         if exif:
             fields["exif"] = exif
+        try:
+            gps = image.getexif().get_ifd(0x8825)
+            if gps:
+                fields["gps"] = {ExifTags.GPSTAGS.get(key, str(key)): str(value)[:1024] for key, value in gps.items()}
+        except (ValueError, KeyError, TypeError):
+            pass
         write_report(request, fields)
 
 

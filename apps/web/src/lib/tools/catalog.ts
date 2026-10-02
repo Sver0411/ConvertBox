@@ -12,7 +12,7 @@ export function tool(id: ToolDefinition['id'], zh: string, en: string, processin
 }
 const pages=text('pages','页码（all 或 1,3-5）','Pages (all or 1,3-5)','all');
 export const expandedTools: ToolDefinition[] = [
-  tool('image.compress','压缩图片','Compress images','hybrid','file',[output,quality]),
+  tool('image.compress','压缩图片','Compress images','hybrid','file',[{...output,defaultValue:'webp'},quality]),
   tool('image.crop','裁剪图片','Crop image','local','file',[output,quality]),
   tool('image.rotate','旋转图片','Rotate images','hybrid','file',[output,select('rotation','角度（顺时针）','Clockwise rotation',['90','180','270','0']),quality]),
   tool('image.flip','翻转图片','Flip images','hybrid','file',[output,{...select('direction','方向','Direction',['horizontal','vertical']),options:[{value:'horizontal',label:l('水平','Horizontal')},{value:'vertical',label:l('垂直','Vertical')}]}]),

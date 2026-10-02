@@ -13,3 +13,11 @@ describe('ZIP and rename',()=>{
  it('rejects traversal and corrupted contents',async()=>{for(const name of ['../a','/a','C:/a','a\\b','a/../b'])expect(()=>safeArchivePath(name)).toThrow();const blob=await createZip([{name:'a',blob:new Blob(['abc'])}]);const bytes=new Uint8Array(await blob.arrayBuffer());bytes[31]^=1;expect(()=>extractZip(bytes)).toThrow();});
  it('renames without changing blobs',()=>{const file=new File(['abc'],'IMG_1.JPG');const result=renamedFiles([file,file],{mode:'sequence',prefix:'Trip_',start:1});expect(result.map(item=>item.name)).toEqual(['Trip_001.JPG','Trip_002.JPG']);expect(result[0].blob).toBe(file);expect(()=>renamedFiles([file],{mode:'replace',find:''})).toThrow();});
 });
+it('rejects ZIP expansion bombs and encryption before inflation',async()=>{
+ const original=new Uint8Array(await (await createZip([{name:'a.txt',blob:new Blob(['abc'])}])).arrayBuffer());
+ const offset=original.findIndex((_,index)=>original[index]===0x50&&original[index+1]===0x4b&&original[index+2]===1&&original[index+3]===2);
+ const bomb=original.slice();new DataView(bomb.buffer).setUint32(offset+24,65*1024*1024,true);expect(()=>archiveDirectory(bomb)).toThrow();
+ const encrypted=original.slice();new DataView(encrypted.buffer).setUint16(offset+8,1,true);expect(()=>archiveDirectory(encrypted)).toThrow();
+ const many=original.slice();const end=many.length-22;new DataView(many.buffer).setUint16(end+10,1001,true);expect(()=>archiveDirectory(many)).toThrow();
+ expect(()=>transformData('data.yaml-json','x: .nan')).toThrow(/Non-finite/);
+});
