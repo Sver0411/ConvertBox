@@ -21,7 +21,7 @@ See [Workbench security](docs/WORKBENCH_SECURITY.md). SVG restricted allowlist +
 ## Verification
 
 - Lint PASS, typecheck PASS.
-- Frontend unit 34 PASS.
+- Frontend unit 35 PASS (including Office/image/audio legacy history mapping).
 - API final local suite: 47 PASS / 2 skipped (49 total). Linux CI at `6c9968a` ran the earlier 48 tests without skips; the final suite includes the palette preservation regression.
 - Chromium 32 PASS plus targeted visual crop and organizer export tests PASS. Tests inspect resize-handle movement, square pixel output, actual PDF page order/rotation and deletion.
 - Production build PASS (tool route ~208 kB first-load JS).

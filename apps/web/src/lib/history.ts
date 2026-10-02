@@ -1,3 +1,13 @@
+export function legacyHistoryTool(format: string): string {
+  const kind=format.toLowerCase();
+  if(kind==='pdf')return 'pdf.convert';
+  if(['jpg','jpeg','png','webp','bmp','gif','heic','heif','avif','tiff','tif','ico','svg'].includes(kind))return 'image.convert';
+  if(['doc','docx','odt','xls','xlsx','ods','ppt','pptx','odp'].includes(kind))return 'document.convert';
+  if(['mp3','wav','flac','aac','m4a','ogg','opus'].includes(kind))return 'audio.convert';
+  if(['mp4','mov','mkv','webm','avi'].includes(kind))return 'video.convert';
+  return 'file.inspect';
+}
+
 export interface HistoryEntry {
   schemaVersion?: number;
   toolId?: string;
@@ -38,7 +48,7 @@ export async function listHistory(): Promise<HistoryEntry[]> {
   try {
     const entries = await requestResult(database.transaction(STORE, "readonly").objectStore(STORE).getAll() as IDBRequest<unknown[]>);
     return entries.filter((item): item is HistoryEntry => typeof item === "object" && item !== null && typeof (item as HistoryEntry).id === "string" && typeof (item as HistoryEntry).name === "string" && typeof (item as HistoryEntry).createdAt === "number" && typeof (item as HistoryEntry).inputFormat === "string" && typeof (item as HistoryEntry).outputFormat === "string")
-      .map(item => ({ ...item, schemaVersion: 3, toolId: item.toolId ?? (item.inputFormat === "pdf" ? "pdf.convert" : ["jpg","png","webp","heic","avif","tiff","ico","svg"].includes(item.inputFormat) ? "image.convert" : ["mp3","wav","flac","m4a","ogg","opus"].includes(item.inputFormat) ? "audio.convert" : "video.convert"), status: item.status ?? "COMPLETED", settings: item.settings && typeof item.settings === "object" ? item.settings : {}, inputSize: Number.isFinite(item.inputSize) ? item.inputSize : 0, outputSize: Number.isFinite(item.outputSize) ? item.outputSize : 0 }))
+      .map(item => ({ ...item, schemaVersion: 3, toolId: item.toolId ?? legacyHistoryTool(item.inputFormat), status: item.status ?? "COMPLETED", settings: item.settings && typeof item.settings === "object" ? item.settings : {}, inputSize: Number.isFinite(item.inputSize) ? item.inputSize : 0, outputSize: Number.isFinite(item.outputSize) ? item.outputSize : 0 }))
       .sort((a, b) => b.createdAt - a.createdAt);
   } finally {
     database.close();
