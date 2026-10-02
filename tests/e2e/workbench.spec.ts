@@ -56,8 +56,18 @@ test('visual crop exports square pixels and free resize handle responds',async({
  await page.goto('/tools/image/crop');
  const bytes=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=96;canvas.height=64;const ctx=canvas.getContext('2d')!;ctx.fillStyle='red';ctx.fillRect(0,0,48,64);ctx.fillStyle='blue';ctx.fillRect(48,0,48,64);return canvas.toDataURL('image/png').split(',')[1];});
  await page.getByLabel('选择文件',{exact:true}).setInputFiles({name:'crop.png',mimeType:'image/png',buffer:Buffer.from(bytes,'base64')});
- const handle=page.getByRole('button',{name:'调整裁剪框大小'});await expect(handle).toBeVisible();const before=await handle.boundingBox();await page.mouse.move(before!.x+10,before!.y+10);await page.mouse.down();await page.mouse.move(before!.x+30,before!.y+25);await page.mouse.up();const after=await handle.boundingBox();expect(after!.x).toBeGreaterThan(before!.x);
+ const handle=page.getByRole('button',{name:'调整裁剪框大小'});await expect(handle).toBeVisible();await handle.scrollIntoViewIfNeeded();const before=await handle.boundingBox();await page.mouse.move(before!.x+10,before!.y+10);await page.mouse.down();await page.mouse.move(before!.x+30,before!.y+25);await page.mouse.up();await expect.poll(async()=> (await handle.boundingBox())!.x).toBeGreaterThan(before!.x);
  await page.getByLabel('比例',{exact:true}).selectOption('1');
  await page.getByRole('button',{name:'开始处理',exact:true}).click();await expect(page.locator('.tool-result')).toBeVisible();
- const dimensions=await page.locator('.result-preview').evaluate((image:HTMLImageElement)=>[image.naturalWidth,image.naturalHeight]);expect(dimensions[0]).toBe(dimensions[1]);expect(dimensions[0]).toBeGreaterThan(0);
+ await page.locator('.result-preview').evaluate((image:HTMLImageElement)=>image.decode());const dimensions=await page.locator('.result-preview').evaluate((image:HTMLImageElement)=>[image.naturalWidth,image.naturalHeight]);expect(dimensions[0]).toBe(dimensions[1]);expect(dimensions[0]).toBeGreaterThan(0);
+});
+
+test('PDF organizer exports chosen order, rotation and deletion',async({page})=>{
+ await page.goto('/tools/pdf/organize');await page.getByLabel('选择文件',{exact:true}).setInputFiles(inputFile('pages.pdf','application/pdf'));await expect(page.locator('.pdf-page-grid img')).toHaveCount(3);
+ await page.getByRole('button',{name:'取消选择',exact:true}).click();await page.getByLabel('原页面 3',{exact:true}).check();await page.getByRole('button',{name:'旋转所选',exact:true}).click();
+ const third=page.locator('.pdf-page-grid>div').filter({has:page.getByText('原页面 3',{exact:true})});await third.getByRole('button',{name:'前移页面'}).click();await third.getByRole('button',{name:'前移页面'}).click();
+ await page.getByLabel('原页面 3',{exact:true}).uncheck();await page.getByLabel('原页面 2',{exact:true}).check();await page.getByRole('button',{name:'删除所选',exact:true}).click();await expect(page.locator('.pdf-page-grid img')).toHaveCount(2);
+ await page.getByRole('button',{name:'开始处理',exact:true}).click();await expect(page.locator('.tool-result')).toBeVisible();
+ const pending=page.waitForEvent('download');await page.locator('.tool-result').getByRole('button',{name:/下载/}).click();const download=await pending;const file=await download.path();
+ const {execFileSync}=await import('node:child_process');const report=execFileSync('uv',['run','python','-c','import pymupdf,json,sys; d=pymupdf.open(sys.argv[1]); print(json.dumps({"text":[p.get_text() for p in d],"rotation":[p.rotation for p in d]}))',file],{cwd:resolve(__dirname,'../../apps/api'),encoding:'utf8'});const data=JSON.parse(report);expect(data.text).toHaveLength(2);expect(data.text[0]).toContain('Original page 3');expect(data.text[1]).toContain('Original page 1');expect(data.rotation).toEqual([90,0]);
 });

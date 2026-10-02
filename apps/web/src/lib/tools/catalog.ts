@@ -8,7 +8,7 @@ const output = select('output','输出格式','Output format',['png','jpg','webp
 const quality = number('quality','质量','Quality',85,1,100);
 export function tool(id: ToolDefinition['id'], zh: string, en: string, processing: ToolDefinition['processing'], outputKind: ToolDefinition['outputKind'], settingsSchema: ToolSettingDefinition[] = [], multiple = false): ToolDefinition {
   const category = id.split('.')[0] as ToolCategory;
-  return {id,category,name:l(zh,en),description:l('',''),icon:category,acceptedInputs:id==='image.crop'?['image/jpeg','image/png','image/webp']:category==='image'?['image/*']:category==='pdf'?['application/pdf']:category==='audio'?['audio/*']:category==='video'?['video/*']:['*'],processing,outputKind,settingsSchema,operation:id,batchSupport:category==='image'&&id!=='image.crop'&&outputKind!=='report',multipleInputSupport:multiple,estimatedResourceClass:['video','pdf'].includes(category)?'heavy':'medium'};
+  return {id,category,name:l(zh,en),description:l('',''),icon:category,acceptedInputs:id==='image.crop'?['image/jpeg','image/png','image/webp']:category==='image'?['image/*']:category==='pdf'?['application/pdf']:category==='audio'?['audio/*']:category==='video'?['video/*']:['*'],processing,outputKind,settingsSchema,operation:id,batchSupport:category==='image'&&id!=='image.crop'&&outputKind!=='report',multipleInputSupport:multiple,keywords:category==='image'?['jpg','jpeg','png','webp','image']:category==='pdf'?['pdf']:[],estimatedResourceClass:['video','pdf'].includes(category)?'heavy':'medium'};
 }
 const pages=text('pages','页码（all 或 1,3-5）','Pages (all or 1,3-5)','all');
 export const expandedTools: ToolDefinition[] = [

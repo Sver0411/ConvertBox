@@ -4,7 +4,7 @@ import { editImage } from './local-images';
 import { hashFile } from './hash';
 import { transformData, MAX_TEXT_BYTES } from './data';
 import { createZip, extractZip, archiveDirectory, renamedFiles, MAX_ARCHIVE_BYTES } from './archive';
-import { createServerJob, pollServerJob } from '@/lib/server-api';
+import { createServerJob, pollServerJob, ServerApiError } from '@/lib/server-api';
 export async function executeTool(request: ToolExecutionRequest, signal: AbortSignal, progress: (value: number) => void): Promise<ToolResult> {
   const {toolId,files,settings} = request;
   const serverResults:{jobId:string;name:string;size:number}[]=[];
@@ -12,7 +12,7 @@ export async function executeTool(request: ToolExecutionRequest, signal: AbortSi
   if (!tool) throw new Error('Unknown tool');
   if (toolId.startsWith('data.')) {
     if (files[0]?.size > MAX_TEXT_BYTES) throw new Error('Text input exceeds 8 MB');
-    const source = files.length ? await files[0].text() : String(settings.text ?? '');
+    const source = files.length ? new TextDecoder('utf-8',{fatal:true}).decode(await files[0].arrayBuffer()) : String(settings.text ?? '');
     return {kind:'text',text:transformData(toolId,source,String(settings.indent ?? '2')),name:`result.${toolId.endsWith('csv')?'csv':toolId.endsWith('yaml')?'yaml':'json'}`};
   }
   if (!files.length) throw new Error('Choose a file');
@@ -49,7 +49,7 @@ export async function executeTool(request: ToolExecutionRequest, signal: AbortSi
   const output = String(settings.output ?? (toolId==='pdf.metadata'&&settings.remove?'pdf':tool.outputKind==='report'?'json':tool.outputKind==='archive'?'zip':toolId==='image.favicon'?'ico':tool.category==='pdf'?'pdf':toolId==='video.gif'?'gif':tool.category==='video'?'mp4':'png'));
   const job = await createServerJob(files,output,tool.operation,clean,signal,toolId);
   const completed = await pollServerJob(job.id,job=>progress(job.progress ?? 0),signal);
-  if (completed.status!=='COMPLETED') throw new Error(completed.error ?? 'Processing failed');
+  if (completed.status!=='COMPLETED') throw new ServerApiError(completed.error ?? 'Processing failed',completed.errorCode??'CONVERSION_FAILED',400);
   if (output==='json') {
     const response = await fetch(`/api/jobs/${job.id}/download`,{signal});
     if (!response.ok || Number(response.headers.get('content-length'))>16*1024*1024) throw new Error('Report unavailable or too large');
