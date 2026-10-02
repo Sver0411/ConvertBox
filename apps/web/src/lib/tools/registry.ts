@@ -1,3 +1,4 @@
+import { expandedTools } from "./catalog";
 export type ToolCategory = "image" | "pdf" | "document" | "data" | "audio" | "video" | "archive" | "file";
 export type ProcessingLocation = "local" | "server" | "hybrid";
 export type ToolOutputKind = "file" | "files" | "archive" | "text" | "report";
@@ -40,6 +41,7 @@ export interface ToolExecutionRequest {
 }
 
 export type ToolResult =
+  | { kind: "server-file"; jobId: string; name: string; size: number }
   | { kind: "file"; blob: Blob; name: string }
   | { kind: "files"; files: { blob: Blob; name: string }[] }
   | { kind: "archive"; blob: Blob; name: string }
@@ -49,6 +51,7 @@ export type ToolResult =
 const names = (zh: string, en: string): LocalizedText => ({ zh, en });
 
 export const toolRegistry: readonly ToolDefinition[] = [
+  ...expandedTools,
   { id: "image.convert", category: "image", name: names("图片格式转换", "Convert images"), description: names("转换 JPG、PNG、WebP 等图片", "Convert JPG, PNG, WebP and more"), icon: "image", acceptedInputs: ["image/*"], processing: "hybrid", batchSupport: true, multipleInputSupport: true, outputKind: "file", operation: "convert", estimatedResourceClass: "medium", keywords: ["jpg", "jpeg", "png", "webp", "heic", "avif"], workspace: "image" },
   { id: "image.resize", category: "image", name: names("调整图片尺寸", "Resize images"), description: names("按宽度或高度缩放图片", "Scale images by width or height"), icon: "resize", acceptedInputs: ["image/*"], processing: "hybrid", batchSupport: true, multipleInputSupport: true, outputKind: "file", operation: "resize", estimatedResourceClass: "medium", keywords: ["尺寸", "width", "height"], workspace: "image" },
   { id: "pdf.convert", category: "pdf", name: names("PDF 转换", "Convert PDF"), description: names("导出图片或提取文字", "Export images or selectable text"), icon: "pdf", acceptedInputs: ["application/pdf"], processing: "server", batchSupport: true, multipleInputSupport: false, outputKind: "file", operation: "convert", estimatedResourceClass: "heavy", workspace: "pdf" },

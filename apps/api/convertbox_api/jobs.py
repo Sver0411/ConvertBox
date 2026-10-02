@@ -17,6 +17,7 @@ from .capabilities import VIDEO_INPUTS
 from .converters import ConversionError, make_registry
 from .core import ConversionRequest, JobStatus, can_transition
 from . import config
+from .tool_handlers.registry import make_tool_registry
 
 log = logging.getLogger(__name__)
 TEMP_ROOT = Path(os.environ.get("TEMP_DIRECTORY", str(Path(tempfile.gettempdir()) / "convertbox")))
@@ -34,6 +35,7 @@ class Job:
     output_path: Path
     operation: str
     settings: dict[str, str | int | float | bool]
+    tool_id: str | None = None
     status: JobStatus = JobStatus.CREATED
     progress: float | None = None
     error: str | None = None
@@ -54,7 +56,7 @@ class Job:
 
     def public(self) -> dict[str, object]:
         return {
-            "id": self.id, "status": self.status.value, "progress": self.progress,
+            "id": self.id, "toolId": self.tool_id, "status": self.status.value, "progress": self.progress,
             "error": self.error, "errorCode": self.error_code, "outputName": self.output_name if self.status == JobStatus.COMPLETED else None,
             "outputSize": self.output_path.stat().st_size if self.status == JobStatus.COMPLETED and self.output_path.exists() else None,
             "createdAt": self.created_at,
@@ -88,6 +90,7 @@ class JobManager:
         self.media_slots = threading.Semaphore(max(1, int(os.environ.get("MAX_VIDEO_CONCURRENCY", "1"))))
         self.worker_count = max(1, min(4, workers))
         self.registry = make_registry()
+        self.tool_registry = make_tool_registry()
 
     def start(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -202,7 +205,7 @@ class JobManager:
                 job.started_at = time.time()
             self._log_event(job, "started")
             try:
-                converter = self.registry.find(job.input_format, job.output_format)
+                converter = self.tool_registry.get(job.tool_id) if job.tool_id else self.registry.find(job.input_format, job.output_format)
                 if converter is None:
                     raise ConversionError("Converter is not available")
                 request = ConversionRequest(
@@ -245,6 +248,7 @@ class JobManager:
                     job.completed_at = time.time()
                 self._log_event(job, "failed")
             finally:
+                job.settings.pop("password", None)
                 self.queue.task_done()
 
     def _set_progress(self, job: Job, fraction: float) -> None:

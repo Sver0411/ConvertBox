@@ -151,6 +151,15 @@ class ImageConverter:
     @staticmethod
     def _open(path: Path) -> Image.Image:
         try:
+            if path.suffix.lower() == ".svg":
+                import sys
+                import tempfile
+                with tempfile.TemporaryDirectory(dir=path.parent) as directory:
+                    raster = Path(directory) / "raster.png"
+                    subprocess.run([sys.executable, "-m", "convertbox_api.svg", str(path), str(raster)], capture_output=True, timeout=30, check=True)
+                    image = Image.open(raster)
+                    image.load()
+                    return image
             image = Image.open(path)
             image.load()
             if image.width * image.height > MAX_IMAGE_PIXELS:

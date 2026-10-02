@@ -51,9 +51,11 @@ def _reject_animation(path: Path, kind: str) -> None:
         raise InvalidFile("Image header is too large to inspect safely.")
 
 
-def detect_file(path: Path, name: str) -> str:
+def detect_file(path: Path, name: str, *, allow_animation: bool = False) -> str:
     header = path.open("rb").read(32)
     suffix = Path(name).suffix.lower().lstrip(".")
+    if suffix == "tif":
+        suffix = "tiff"
     if suffix == "jpeg":
         suffix = "jpg"
     if suffix == "heif":
@@ -69,6 +71,23 @@ def detect_file(path: Path, name: str) -> str:
         actual = "bmp"
     elif header[:6] in (b"GIF87a", b"GIF89a"):
         actual = "gif"
+    elif header.startswith((b"II\x2a\x00", b"MM\x00\x2a")):
+        actual = "tiff"
+        if not allow_animation:
+            with Image.open(path) as image:
+                if getattr(image, "n_frames", 1) > 1:
+                    raise InvalidFile("Multipage TIFF requires explicit page handling")
+    elif header.startswith(b"\x00\x00\x01\x00"):
+        actual = "ico"
+    elif suffix == "svg":
+        from .svg import validate_svg
+        try:
+            if path.stat().st_size > 2 * 1024 * 1024:
+                raise ValueError("SVG exceeds 2 MB")
+            validate_svg(path.read_bytes())
+        except Exception as exc:
+            raise InvalidFile("Unsafe or invalid SVG") from exc
+        actual = "svg"
     elif header.startswith(b"%PDF-"):
         actual = "pdf"
     elif header[:4] == b"RIFF" and header[8:12] == b"WAVE":
@@ -129,7 +148,7 @@ def detect_file(path: Path, name: str) -> str:
             raise InvalidFile("File extension does not match its contents")
     if actual in AUDIO_INPUTS + VIDEO_INPUTS:
         _verify_media(path, actual)
-    if actual in ("png", "webp", "gif"):
+    if not allow_animation and actual in ("png", "webp", "gif"):
         _reject_animation(path, actual)
     return actual
 

@@ -35,7 +35,7 @@ def test_capabilities_and_transitions() -> None:
     client = TestClient(app)
     assert client.get("/health").json() == {"status": "ok"}
     capabilities = client.get("/capabilities").json()
-    assert capabilities["version"] == 2
+    assert capabilities["version"] == 3
     assert any(item["input"] == "pdf" and "png" in item["outputs"] for item in capabilities["server"])
     assert can_transition(JobStatus.QUEUED, JobStatus.PROCESSING)
     assert not can_transition(JobStatus.COMPLETED, JobStatus.PROCESSING)

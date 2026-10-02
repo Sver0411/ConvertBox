@@ -5,6 +5,7 @@ from functools import lru_cache
 from shutil import which
 import subprocess
 from PIL import features
+from .svg import available as svg_available
 
 
 @dataclass(frozen=True)
@@ -14,7 +15,7 @@ class Capability:
     note: str = ""
 
 
-IMAGE_INPUTS = ("jpg", "png", "webp", "bmp", "gif", "heic", "avif")
+IMAGE_INPUTS = ("jpg", "png", "webp", "bmp", "gif", "heic", "avif", "tiff", "ico", "svg")
 AUDIO_INPUTS = ("mp3", "wav", "flac", "aac", "m4a", "ogg", "opus")
 VIDEO_INPUTS = ("mp4", "mov", "mkv", "webm", "avi")
 OFFICE_INPUTS = ("doc", "docx", "odt", "xls", "xlsx", "ods", "ppt", "pptx", "odp")
@@ -38,7 +39,7 @@ def server_capabilities() -> list[Capability]:
     capabilities = [
         Capability("pdf", ("png", "jpg", "txt", "docx"), "DOCX/TXT extract selectable text; scanned pages need OCR."),
         *(Capability(kind, image_outputs) for kind in IMAGE_INPUTS[:3]),
-        *(Capability(kind, image_outputs) for kind in IMAGE_INPUTS[3:] if kind != "avif" or features.check("avif")),
+        *(Capability(kind, image_outputs) for kind in IMAGE_INPUTS[3:] if (kind != "avif" or features.check("avif")) and (kind != "svg" or svg_available())),
     ]
     if which("soffice"):
         capabilities.extend(Capability(kind, ("pdf",)) for kind in OFFICE_INPUTS)

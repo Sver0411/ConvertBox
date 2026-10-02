@@ -73,7 +73,8 @@ def ready() -> dict[str, str]:
 @app.get("/capabilities")
 def capabilities() -> dict[str, object]:
     return {
-        "version": 2,
+        "version": 3,
+        "tools": manager.tool_registry.capabilities(),
         "server": [item.__dict__ for item in server_capabilities()],
         "pdfOperations": list(PDF_OPERATIONS) + ["compress"],
         "maxUploadSize": MAX_UPLOAD_SIZE,
@@ -93,18 +94,24 @@ async def create_job(
     output: Annotated[str, Form()],
     operation: Annotated[str, Form()] = "convert",
     settings: Annotated[str, Form()] = "{}",
+    tool_id: Annotated[str, Form(alias="toolId")] = "",
 ) -> dict[str, object]:
     if not files or len(files) > 100:
         raise ApiError(400, "INVALID_FILE", "Upload 1–100 files.")
+    tool = manager.tool_registry.get(tool_id) if tool_id else None
+    if tool_id and (tool is None or not tool.available()):
+        raise ApiError(400, "CONVERTER_UNAVAILABLE", "Tool is unavailable on this server.")
     try:
         parsed = json.loads(settings)
         if not isinstance(parsed, dict) or len(settings) > 4096:
             raise ValueError()
         allowed = {"quality", "width", "height", "pages", "dpi", "rotation", "bitrate", "sample_rate", "resolution", "fps", "video_quality", "page_size", "orientation", "margin", "keep_metadata"}
+        if tool:
+            allowed = tool.settings
         parsed = {key: value for key, value in parsed.items() if key in allowed and isinstance(value, (str, int, float, bool))}
     except (ValueError, TypeError) as exc:
         raise ApiError(400, "INVALID_SETTINGS", "Invalid conversion settings.") from exc
-    if operation not in ("convert", *PDF_OPERATIONS, "compress"):
+    if not tool and operation not in ("convert", *PDF_OPERATIONS, "compress"):
         raise ApiError(400, "UNSUPPORTED_FORMAT", "Unsupported operation.")
     job_id, directory = await asyncio.to_thread(manager.allocate)
     paths: list[Path] = []
@@ -120,14 +127,20 @@ async def create_job(
                         raise ApiError(413, "FILE_TOO_LARGE", "Upload exceeds server limit.")
                     await asyncio.to_thread(check_storage, manager.root)
                     await asyncio.to_thread(target.write, chunk)
-            kind = await asyncio.to_thread(detect_file, raw, upload.filename or "")
+            kind = await asyncio.to_thread(detect_file, raw, upload.filename or "", allow_animation=True) if tool and tool.allow_animation else await asyncio.to_thread(detect_file, raw, upload.filename or "")
             named = directory / f"input_{index}.{kind}"
             await asyncio.to_thread(raw.rename, named)
             paths.append(named)
             detected.append(kind)
             await upload.close()
         source = detected[0]
-        if operation != "convert":
+        if tool:
+            if any(kind not in tool.inputs for kind in detected) and "*" not in tool.inputs:
+                raise ApiError(400, "UNSUPPORTED_FORMAT", "File format is not accepted by this tool.")
+            from .core import ConversionRequest
+            tool.validate(ConversionRequest(paths[0], directory / "result", source, output, parsed, input_paths=tuple(paths)))
+            operation = tool.id
+        elif operation != "convert":
             if source != "pdf" or any(kind != "pdf" for kind in detected):
                 raise ApiError(400, "INVALID_FILE", "PDF operation requires PDF inputs.")
             if operation == "merge" and len(paths) < 2:
@@ -138,15 +151,16 @@ async def create_job(
         elif len(paths) > 1:
             if output != "pdf" or any(kind not in ("jpg", "png", "webp", "bmp", "gif", "heic", "avif") for kind in detected):
                 raise ApiError(400, "INVALID_FILE", "Multiple files are supported for images to PDF.")
-        if not can_convert(source, output) and not (source == "pdf" and output == "pdf" and operation != "convert"):
+        if not tool and not can_convert(source, output) and not (source == "pdf" and output == "pdf" and operation != "convert"):
             raise ApiError(400, "UNSUPPORTED_FORMAT", "Conversion is not supported.")
-        extension = "zip" if (source == "pdf" and output in ("png", "jpg")) or operation == "split" else output
+        extension = output if tool else "zip" if (source == "pdf" and output in ("png", "jpg")) or operation == "split" else output
         base = "merged" if operation == "merge" else "split" if operation == "split" else "images" if len(paths) > 1 and output == "pdf" else _safe_stem(files[0].filename or "converted")
         output_name = f"{base}.{extension}"
         job = Job(
             id=job_id, directory=directory, inputs=tuple(paths), input_format=source,
             output_format=output, output_name=output_name, output_path=directory / f"result.{extension}",
             operation=operation, settings=parsed,
+            tool_id=tool.id if tool else None,
         )
         await asyncio.to_thread(manager.submit, job)
         return job.public()
@@ -155,7 +169,7 @@ async def create_job(
         raise ApiError(400, exc.code, str(exc)) from exc
     except ConversionError as exc:
         await asyncio.to_thread(shutil.rmtree, directory, ignore_errors=True)
-        code = "QUEUE_FULL" if "queue is full" in str(exc).lower() else "CONVERTER_UNAVAILABLE"
+        code = "QUEUE_FULL" if "queue is full" in str(exc).lower() else exc.code
         raise ApiError(503 if code == "QUEUE_FULL" else 400, code, str(exc)) from exc
     except Exception:
         await asyncio.to_thread(shutil.rmtree, directory, ignore_errors=True)

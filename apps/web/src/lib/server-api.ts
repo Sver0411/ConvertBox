@@ -6,6 +6,7 @@ export interface ServerCapability {
 
 export interface ServerCapabilities {
   version: number;
+  tools?: Record<string, { available: boolean; inputs: string[]; outputs: string[] }>;
   server: ServerCapability[];
   pdfOperations: string[];
   maxUploadSize: number;
@@ -45,10 +46,11 @@ export async function getServerCapabilities(): Promise<ServerCapabilities> {
 
 export async function createServerJob(
   files: File[], output: string, operation: string,
-  settings: Record<string, string | number | boolean>, signal: AbortSignal,
+  settings: Record<string, string | number | boolean>, signal: AbortSignal, toolId?: string,
 ): Promise<ServerJob> {
   const form = new FormData();
   for (const file of files) form.append("files", file, file.name);
+  if (toolId) form.append("toolId", toolId);
   form.append("output", output);
   form.append("operation", operation);
   form.append("settings", JSON.stringify(settings));
