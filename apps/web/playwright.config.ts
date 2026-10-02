@@ -5,7 +5,7 @@ export default defineConfig({
   workers: 1,
   use: { baseURL: "http://127.0.0.1:3000" },
   projects: [
-    { name: "chromium-full", use: { ...devices["Desktop Chrome"] }, testMatch: "convert.spec.ts" },
+    { name: "chromium-full", use: { ...devices["Desktop Chrome"] }, testMatch: ["convert.spec.ts", "workbench.spec.ts"] },
     { name: "chromium-critical", use: { ...devices["Desktop Chrome"] }, testMatch: "critical.spec.ts" },
     { name: "firefox-critical", use: { ...devices["Desktop Firefox"] }, testMatch: "critical.spec.ts" },
     { name: "webkit-critical", use: { ...devices["Desktop Safari"] }, testMatch: "critical.spec.ts" },

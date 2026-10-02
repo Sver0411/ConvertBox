@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 const fixture = (name: string) => readFileSync(resolve(__dirname, "../fixtures", name));
 
 test("home, signature detection, language and theme", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/convert");
   await expect(page.getByRole("heading", { name: "文件转换" })).toBeVisible();
   await page.getByLabel("主题").selectOption("dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
@@ -25,7 +25,7 @@ test("home, signature detection, language and theme", async ({ page }) => {
 
 test("PNG to JPG fallback resizes and downloads a real image", async ({ page }) => {
   await page.addInitScript(() => { Object.defineProperty(window, "OffscreenCanvas", { value: undefined, configurable: true }); });
-  await page.goto("/");
+  await page.goto("/convert");
   await page.getByLabel("选择文件").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: fixture("sample.png") });
   await page.getByLabel("目标格式", { exact: true }).selectOption("jpg");
   await page.getByLabel("宽度（像素）").fill("8");
@@ -49,7 +49,7 @@ test("PNG to JPG fallback resizes and downloads a real image", async ({ page }) 
 });
 
 test("WebP output follows runtime encoding capability", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/convert");
   const supported = await page.evaluate(() => {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = 1;

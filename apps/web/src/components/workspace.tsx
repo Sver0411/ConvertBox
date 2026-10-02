@@ -19,6 +19,8 @@ import { effectiveSettings, isStale, type EffectiveControls } from "@/lib/effect
 import { DropZone, FileList, FileRow, WorkspaceFooter } from "@/components/workspace-parts";
 import { ImageSettings, MediaSettings, PdfSettings, PresetControls, QualitySettings } from "@/components/workspace-settings";
 import { WorkspaceShell } from "@/components/workspace-shell";
+import { recordToolUse } from "@/lib/tools/preferences";
+import type { ToolDefinition } from "@/lib/tools/registry";
 
 const MAX_INPUT_SIZE = 25 * 1024 * 1024;
 const MAX_FILES = 100;
@@ -43,11 +45,11 @@ function canUseLocal(descriptor: FileDescriptor, settings: { output: string; wid
   return isLocal(descriptor.detectedType, settings.output) && bytes <= MAX_INPUT_SIZE && !keepMetadata && estimatedImageBytes(descriptor, settings) <= DEFAULT_LOCAL_MEMORY_BUDGET;
 }
 
-export default function Workspace() {
+export default function Workspace({ initialView = "all", initialOperation = "convert", initialToolId }: { initialView?: ConversionView; initialOperation?: string; initialToolId?: ToolDefinition["id"] } = {}) {
   const [language, setLanguage] = useState<Language>("zh");
   const t = copy[language];
   const [jobs, setJobs] = useState<ConversionJob[]>([]);
-  const [activeView, setActiveView] = useState<ToolView>("all");
+  const [activeView, setActiveView] = useState<ToolView>(initialView);
   const jobsRef = useRef<ConversionJob[]>([]);
   const [format, setFormat] = useState("webp");
   const [quality, setQuality] = useState(85);
@@ -65,7 +67,7 @@ export default function Workspace() {
   const [resolution, setResolution] = useState(0);
   const [fps, setFps] = useState(0);
   const [videoQuality, setVideoQuality] = useState("high");
-  const [pdfOperation, setPdfOperation] = useState("convert");
+  const [pdfOperation, setPdfOperation] = useState(initialOperation);
   const [serverCapabilities, setServerCapabilities] = useState<ServerCapabilities | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [customPresets, setCustomPresets] = useState<Preset[]>([]);
@@ -109,12 +111,14 @@ export default function Workspace() {
   useEffect(() => {
     const readView = () => {
       const value = new URLSearchParams(location.search).get("tool");
-      setActiveView(toolViews.find(item => item === value) ?? "all");
+      setActiveView(toolViews.find(item => item === value) ?? initialView);
     };
     readView();
     window.addEventListener("popstate", readView);
     return () => window.removeEventListener("popstate", readView);
-  }, []);
+  }, [initialView]);
+
+  useEffect(() => { if (initialToolId) recordToolUse(initialToolId); }, [initialToolId]);
 
   const selectView = useCallback((view: ToolView) => {
     if (view === activeView) return;
@@ -384,7 +388,7 @@ export default function Workspace() {
   const shownOptions = oneCategory === "pdf" && view !== "word" && pdfOperation !== "convert" ? ["pdf"] : bulkOptions;
   const groupKind = oneCategory === "pdf" && view !== "word" && pdfOperation === "merge" && supported.filter(job => job.file.size > 0).length >= 2 ? "merge" : oneCategory === "image" && format === "pdf" && supported.filter(job => job.file.size > 0).length >= 2 ? "images" : null;
 
-  return <WorkspaceShell jobs={jobs} activeView={activeView} language={language} theme={theme} dragging={dragging}
+  return <WorkspaceShell jobs={jobs} activeView={activeView} language={language} theme={theme} dragging={dragging} toolId={initialToolId}
     onView={selectView} onTheme={setTheme} onLanguage={() => setLanguage(language === "zh" ? "en" : "zh")}
     onDragEnter={event => { if (event.dataTransfer.types.includes("Files")) { dragDepth.current++; setDragging(true); } }}
     onDragOver={event => event.preventDefault()}

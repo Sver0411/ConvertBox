@@ -7,7 +7,7 @@ import { unzipSync } from "fflate";
 const png = readFileSync(resolve(__dirname, "../fixtures/sample.png"));
 
 test("PNG converts locally to downloadable WebP at selected quality", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/convert");
   await expect(page.getByRole("heading", { name: "文件转换" })).toBeVisible();
   await page.getByLabel("选择文件").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: png });
   await expect(page.getByText("sample.png")).toBeVisible();
@@ -25,7 +25,7 @@ test("PNG converts locally to downloadable WebP at selected quality", async ({ p
 });
 
 test("unsupported signature does not block a valid file", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/convert");
   await page.getByLabel("选择文件").setInputFiles([
     { name: "fake.jpg", mimeType: "image/jpeg", buffer: Buffer.from("not an image") },
     { name: "sample.png", mimeType: "image/png", buffer: png },
@@ -36,7 +36,7 @@ test("unsupported signature does not block a valid file", async ({ page }) => {
 });
 
 test("JPG and WebP convert in one batch and ZIP contains both outputs", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/convert");
   await page.getByLabel("选择文件").setInputFiles([
     { name: "sample.jpg", mimeType: "image/jpeg", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.jpg")) },
     { name: "sample.webp", mimeType: "image/webp", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.webp")) },
@@ -54,7 +54,7 @@ test("JPG and WebP convert in one batch and ZIP contains both outputs", async ({
 });
 
 test("language switch rewrites the full workspace in English", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/convert");
   await page.getByRole("button", { name: "Switch to English" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.getByRole("heading", { name: "File conversion" })).toBeVisible();
@@ -67,7 +67,7 @@ test("language switch rewrites the full workspace in English", async ({ page }) 
 });
 
 test("local image resize preserves aspect ratio", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/convert");
   await page.getByLabel("选择文件").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: png });
   await page.getByLabel("目标格式", { exact: true }).selectOption("png");
   await page.getByLabel("宽度（像素）").fill("8");
@@ -81,7 +81,7 @@ test("local image resize preserves aspect ratio", async ({ page }) => {
 });
 
 test("completed PNG keeps its old download until changed settings are reconverted", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/convert");
   await page.getByLabel("选择文件").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: png });
   await page.getByLabel("目标格式", { exact: true }).selectOption("png");
   await page.getByRole("button", { name: "开始转换" }).click();
@@ -95,7 +95,7 @@ test("completed PNG keeps its old download until changed settings are reconverte
 });
 
 test("PDF to PNG and Word to PDF run on the server", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/convert");
   await page.getByLabel("选择文件").setInputFiles({ name: "sample.pdf", mimeType: "application/pdf", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.pdf")) });
   await expect(page.locator(".file-row")).toContainText("服务器");
   await page.getByRole("button", { name: "开始转换" }).click();
@@ -115,7 +115,7 @@ test("PDF to PNG and Word to PDF run on the server", async ({ page }) => {
 });
 
 test("audio and video produce real MP3 output", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/convert");
   await page.getByLabel("选择文件").setInputFiles({ name: "sample.wav", mimeType: "audio/wav", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.wav")) });
   await page.getByRole("button", { name: "开始转换" }).click();
   await expect(page.locator(".summary")).toContainText("1 个已完成", { timeout: 20000 });
@@ -134,7 +134,7 @@ test("audio and video produce real MP3 output", async ({ page }) => {
 });
 
 test("preset, history and dark theme work together", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/convert");
   await page.getByLabel("主题").selectOption("dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.getByLabel("选择文件").setInputFiles({ name: "sample.png", mimeType: "image/png", buffer: png });
@@ -154,7 +154,7 @@ test("preset, history and dark theme work together", async ({ page }) => {
 });
 
 test("image order controls the pages of a combined PDF", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/convert");
   await page.getByLabel("选择文件").setInputFiles([
     { name: "first.png", mimeType: "image/png", buffer: png },
     { name: "second.jpg", mimeType: "image/jpeg", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.jpg")) },
@@ -173,7 +173,7 @@ test("image order controls the pages of a combined PDF", async ({ page }) => {
 
 test("sidebar opens focused Word and PDF workspaces without page scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
-  await page.goto("/");
+  await page.goto("/convert");
   await page.getByRole("button", { name: /^Word/ }).click();
   await expect(page.getByRole("heading", { name: "Word 转换" })).toBeVisible();
   await expect(page).toHaveURL(/tool=word/);
@@ -195,7 +195,7 @@ test("sidebar opens focused Word and PDF workspaces without page scrolling", asy
 });
 
 test("Word workspace exposes PDF to DOCX and keeps other queued files separate", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/convert");
   await page.getByRole("button", { name: /^Word/ }).click();
   await page.getByLabel("选择文件").setInputFiles({ name: "sample.pdf", mimeType: "application/pdf", buffer: readFileSync(resolve(__dirname, "../fixtures/sample.pdf")) });
   await expect(page.getByLabel("目标格式", { exact: true })).toHaveValue("docx");

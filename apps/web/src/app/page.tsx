@@ -1,5 +1,3 @@
-import Workspace from "@/components/workspace";
+import ToolsHome from "@/components/tools-home";
 
-export default function Home() {
-  return <Workspace />;
-}
+export default function Home() { return <ToolsHome />; }
