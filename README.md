@@ -1,57 +1,47 @@
 # ConvertBox
 
-简洁、无账号的文件转换工作台。中文界面为默认，支持手写英文界面切换。JPG、PNG、WebP 的常规转换与尺寸调整在浏览器完成；PDF、Office、HEIC、AVIF、音频、视频等任务由自托管服务器处理。无第三方转换 API。
+一个隐私友好、自托管的文件处理工作台，用于转换、压缩、检查、整理和批量处理常见文件。
 
-[MIT 许可证](LICENSE)。
+A privacy-friendly, self-hosted file workbench for converting, compressing, inspecting, organizing and batch-processing everyday files.
 
-## 截图
+中文优先，手写英文界面；无账号、无第三方转换 API。[MIT](LICENSE)。桌面端工具中心支持搜索、收藏、最近使用、Cmd/Ctrl+K 和稳定工具 URL。
 
-![首页](docs/screenshots/home.png)
+## 功能
 
-![转换工作区](docs/screenshots/workspace.png)
+| 分类 | 已实现 |
+|---|---|
+| Images | 格式转换、缩放、压缩、可视化裁剪、旋转、翻转、元数据查看/移除、ICC 可选保留、六尺寸 favicon |
+| PDF | 转换、合并、拆分、旋转、优化、缩略图页面整理、提取/删除页面、文字水印、页码、提取内嵌图片、元数据查看/移除、AES-256 密码保护 |
+| Documents | Word、表格、演示文稿转 PDF；PDF 可选择文字导出 TXT/DOCX |
+| Audio | 转换、裁剪、按序合并、音量统一 |
+| Video | 转换、提取音频、压缩、裁剪、GIF、抽帧 |
+| Data | JSON 格式化/压缩/校验，JSON ↔ CSV，JSON ↔ YAML |
+| Archives | 创建/解压 ZIP，目录检查、选择下载 |
+| File utilities | 文件检查、分块 SHA-256/SHA-1/MD5、校验值核对、批量重命名预览与 ZIP 下载 |
 
-![手机工作区](docs/screenshots/mobile-workspace.png)
+[工具目录](docs/TOOLS.md)从唯一前端 Tool Registry 生成：`npm run generate-tool-docs`。工具定义 46 项；服务端工具及输出由运行环境能力收窄，不可用工具不出现在工具中心。
 
-## 已实现
+## 处理方式
 
-- 自动检测文件签名，逐个隔离不支持或损坏的文件；最多添加 100 个文件。
-- 图片格式转换、尺寸调整、质量设置；浏览器支持时使用 Web Worker。
-- PDF 转 PNG/JPG（按页打包 ZIP、页码和 DPI）、提取 TXT/DOCX 文本、合并、拆分、旋转、优化；图片按指定顺序合成 PDF，可选页面尺寸、方向与边距。
-- DOC/DOCX/ODT、XLS/XLSX/ODS、PPT/PPTX/ODP 转 PDF（需要 LibreOffice）。
-- 常见音频格式互转、视频转换与提取音频（需要 FFmpeg）；音视频输出选项按服务器编码器检测结果提供。
-- 有界后台队列、实际 FFmpeg 进度、取消排队任务、失败重试、独立下载与浏览器端批量 ZIP。
-- IndexedDB 仅保存转换记录和设置，不保存文件；提供内置和自定义预设。
-- 浅色、深色和跟随系统主题；键盘快捷键 Cmd/Ctrl+O 与 Cmd/Ctrl+Enter。
-- 桌面端左侧按图片、PDF、Word、音频、视频分类；记录与说明在同一工作区切换。转换类别通过 URL 参数可直接打开，长文件列表在面板内部滚动。
+数据、Hash、ZIP、重命名在浏览器运行。常规静态 JPG/PNG/WebP 图片优先本地处理；HEIC、AVIF、TIFF、ICO 和受限 SVG、PDF、Office、音视频由自托管服务器处理。SVG 需要 Cairo 系统库，未安装时不开放该转换能力。
 
-## 架构
+转换任务保留 Converter Registry，非转换操作使用 ToolHandlerRegistry。统一 ToolExecution 支持文件、多文件、下载链接、文本和报告结果。工具页面使用统一设置与任务模型，裁剪和 PDF 页面整理提供专用编辑界面。
 
-```text
-浏览器 File API ─→ 文件签名检测 ─→ 本地图片 Web Worker / Canvas ─→ Blob 下载
-                           │
-                           └→ Next.js 同源代理 → FastAPI 流式上传
-                                                → Job Manager → 有界队列 → Converter Registry
-                                                → 临时结果 → 下载 / 1 小时后清理
-```
+## 边界
 
-服务端 Worker 当前与 API 在同一进程的后台线程中，部署单个 API 实例。部署多个 API 副本需要先把任务状态、队列和临时文件迁至共享基础设施。参见[架构](docs/ARCHITECTURE.md)与[转换流程](docs/CONVERSION_PIPELINE.md)。
+- 本地图片单文件 ≤25 MB，估算内存预算 256 MiB；动画转换明确拒绝。
+- PDF 编辑 ≤200 页；预览与报告 ≤16 MiB；服务器输出默认 ≤512 MiB。
+- ZIP 压缩/解压后数据各 ≤64 MiB，≤1000 项；不支持 ZIP64、加密 ZIP、旧式非 UTF-8 名称。
+- 数据文本 ≤8 MiB；JSON/CSV 仅支持扁平对象数组，YAML 禁止别名。
+- 媒体时长 ≤1 小时；GIF ≤15 秒；抽帧 ≤100 张。
+- PDF 转 DOCX 提取可选择文字，不保留原排版；扫描版无 OCR。加密 PDF 输入不能编辑，TIFF 多页编辑暂不支持。
+- 收藏、预设与历史记录保存在当前浏览器；历史不保存原文件。复用记录需重新选择文件。旧预设迁移保留原数据，密码与粘贴内容不进入预设/历史。
 
-## 格式
-
-| 输入 | 输出或操作 | 位置 |
-| --- | --- | --- |
-| JPG、PNG、WebP | JPG、PNG、WebP，尺寸调整 | 本地（单文件 ≤25 MB） |
-| JPG、PNG、WebP、BMP、GIF、HEIC/HEIF、AVIF | JPG、PNG、WebP、AVIF、PDF（按实际编码器能力） | 服务器 |
-| PDF | PNG、JPG、TXT、DOCX；合并、拆分、旋转、优化 | 服务器 |
-| DOC、DOCX、ODT、XLS、XLSX、ODS、PPT、PPTX、ODP | PDF | 服务器 |
-| MP3、WAV、FLAC、AAC、M4A、OGG、OPUS | MP3、WAV、FLAC、M4A、OGG、OPUS（按编码器能力） | 服务器 |
-| MP4、MOV、MKV、WebM、AVI | MP4、WebM、MKV、MP3、WAV（按编码器能力） | 服务器 |
-
-PDF 转 DOCX 只提取可选择的文字，不保留原排版；扫描版 PDF 不做 OCR。PDF 页面图片输出为 ZIP。图片可移除元数据，或经服务器保留 EXIF 与色彩配置；其他元数据类型未保证保留。SVG 尚未开放。动态 WebP、APNG 和 GIF 会明确拒绝转换，避免丢失动画。格式表会由 `/capabilities` 根据运行环境收窄，界面只展示实际可用的输出。
+完整边界与安全策略见 [Workbench Security](docs/WORKBENCH_SECURITY.md)、[架构](docs/ARCHITECTURE.md)和 [Phase 8 Review](PHASE_8_REVIEW.md)。
 
 ## 本地开发
 
-需要 Node.js 22+、npm 10+、Python 3.11+、[uv](https://docs.astral.sh/uv/)、FFmpeg 和 LibreOffice。运行：
+默认直接运行，不需要 Docker。需要 Node.js 22+、npm 10+、Python 3.11+、[uv](https://docs.astral.sh/uv/)、FFmpeg 和 LibreOffice。运行：
 
 ```bash
 npm ci

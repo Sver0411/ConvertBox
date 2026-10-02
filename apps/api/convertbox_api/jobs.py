@@ -151,6 +151,7 @@ class JobManager:
                 return False
             if job.status == JobStatus.PROCESSING:
                 raise ConversionError("Processing job cannot be cancelled")
+            job.settings.pop("password", None)
             job.cancel_event.set()
             job.transition(JobStatus.EXPIRED if job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED) else JobStatus.CANCELLED)
             self.jobs.pop(job_id, None)

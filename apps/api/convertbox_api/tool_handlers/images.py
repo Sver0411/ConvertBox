@@ -57,8 +57,10 @@ def strip_metadata(request: ConversionRequest) -> None:
         image = ImageOps.exif_transpose(source)
         icc = source.info.get("icc_profile") if request.settings.get("keep_icc") is True else None
         # A fresh pixel image drops EXIF, text chunks, GPS and format-specific info.
-        cleaned = Image.new(image.mode, image.size)
-        cleaned.paste(image)
+        pixels = image.convert("RGBA" if "A" in image.getbands() or "transparency" in image.info else "RGB")
+        cleaned = Image.new(pixels.mode, pixels.size)
+        cleaned.paste(pixels)
+        pixels.close()
         save_image(cleaned, request, icc=icc if isinstance(icc, bytes) else None)
         cleaned.close()
 

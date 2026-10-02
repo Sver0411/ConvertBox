@@ -96,6 +96,7 @@ export async function createZip(files: { name: string; blob: Blob }[]): Promise<
 }
 
 export function renamedFiles(files: File[], settings: Record<string, unknown>): { name: string; blob: Blob }[] {
+  if (settings.mode === "replace" && !String(settings.find ?? "")) throw new Error("Find text cannot be empty.");
   const used = new Set<string>();
   return files.map((file, index) => {
     const dot = file.name.lastIndexOf(".");

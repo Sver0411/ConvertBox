@@ -103,7 +103,7 @@ async def create_job(
         raise ApiError(400, "CONVERTER_UNAVAILABLE", "Tool is unavailable on this server.")
     try:
         parsed = json.loads(settings)
-        if not isinstance(parsed, dict) or len(settings) > 4096:
+        if not isinstance(parsed, dict) or len(settings) > (16384 if tool else 4096):
             raise ValueError()
         allowed = {"quality", "width", "height", "pages", "dpi", "rotation", "bitrate", "sample_rate", "resolution", "fps", "video_quality", "page_size", "orientation", "margin", "keep_metadata"}
         if tool:
@@ -127,7 +127,16 @@ async def create_job(
                         raise ApiError(413, "FILE_TOO_LARGE", "Upload exceeds server limit.")
                     await asyncio.to_thread(check_storage, manager.root)
                     await asyncio.to_thread(target.write, chunk)
-            kind = await asyncio.to_thread(detect_file, raw, upload.filename or "", allow_animation=True) if tool and tool.allow_animation else await asyncio.to_thread(detect_file, raw, upload.filename or "")
+            if tool and tool.id == "file.inspect":
+                try:
+                    kind = await asyncio.to_thread(detect_file, raw, upload.filename or "", allow_animation=True)
+                except InvalidFile:
+                    try:
+                        kind = await asyncio.to_thread(detect_file, raw, "", allow_animation=True)
+                    except InvalidFile:
+                        kind = "unknown"
+            else:
+                kind = await asyncio.to_thread(detect_file, raw, upload.filename or "", allow_animation=True) if tool and tool.allow_animation else await asyncio.to_thread(detect_file, raw, upload.filename or "")
             named = directory / f"input_{index}.{kind}"
             await asyncio.to_thread(raw.rename, named)
             paths.append(named)

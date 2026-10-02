@@ -96,3 +96,15 @@ def test_pdf_merge_split_and_delete() -> None:
         assert client.get(f"/jobs/{state['id']}").status_code == 404
     first.close()
     second.close()
+
+def test_tool_jobs_validate_and_return_reports():
+    import json
+    with TestClient(app) as client:
+        image=io.BytesIO();Image.new('RGB',(20,10),'red').save(image,'PNG')
+        state,content=submit(client,image.getvalue(),'sample.png','json',toolId='image.metadata')
+        assert json.loads(content)['width']==20 and state['toolId']=='image.metadata'
+        response=client.post('/jobs',files=[('files',('sample.png',image.getvalue()))],data={'toolId':'image.rotate','output':'pdf'})
+        assert response.status_code==400 and response.json()['detail']['code']=='UNSUPPORTED_FORMAT'
+        state,content=submit(client,b'arbitrary bytes','report.unknown','json',toolId='file.inspect')
+        assert json.loads(content)['actual_format']=='unknown'
+        assert client.post('/jobs',files=[('files',('sample.png',image.getvalue()))],data={'toolId':'unknown.tool','output':'png'}).status_code==400

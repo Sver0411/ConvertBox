@@ -20,6 +20,8 @@ export function normalizeExtension(extension: string): ImageFormat | null {
 }
 
 export function signatureOf(bytes: Uint8Array): Signature {
+  if (bytes.length >= 4 && ((bytes[0]===73&&bytes[1]===73&&bytes[2]===42&&bytes[3]===0)||(bytes[0]===77&&bytes[1]===77&&bytes[2]===0&&bytes[3]===42))) return "tiff";
+  if (bytes.length >= 4 && bytes[0]===0&&bytes[1]===0&&bytes[2]===1&&bytes[3]===0) return "ico";
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpg";
   if (bytes.length >= 8 && [137, 80, 78, 71, 13, 10, 26, 10].every((v, i) => bytes[i] === v)) return "png";
   if (bytes.length >= 12 && String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") return "webp";
@@ -46,7 +48,7 @@ export function signatureOf(bytes: Uint8Array): Signature {
 }
 
 const categories: Record<string, FileCategory> = {
-  jpg: "image", png: "image", webp: "image", bmp: "image", gif: "image", heic: "image", avif: "image",
+  jpg: "image", png: "image", webp: "image", bmp: "image", gif: "image", heic: "image", avif: "image", tiff: "image", ico: "image", svg: "image",
   pdf: "pdf", doc: "office", docx: "office", odt: "office", xls: "office", xlsx: "office", ods: "office", ppt: "office", pptx: "office", odp: "office",
   mp3: "audio", wav: "audio", flac: "audio", aac: "audio", m4a: "audio", ogg: "audio", opus: "audio",
   mp4: "video", mov: "video", mkv: "video", webm: "video", avi: "video",
@@ -67,11 +69,14 @@ export async function detectFileType(file: File): Promise<FileDescriptor> {
   const extension = extensionOf(file.name);
   const expected = normalizeExtension(extension);
   const mime = file.type.toLowerCase();
-  const signature = signatureOf(new Uint8Array(await file.slice(0, 16).arrayBuffer()));
+  let signature = signatureOf(new Uint8Array(await file.slice(0, 16).arrayBuffer()));
+  if (extension==="svg" && file.size<=2*1024*1024) {
+    try {const text=new TextDecoder("utf-8",{fatal:true}).decode(await file.arrayBuffer()); if (/<svg[\s>]/i.test(text)&&!/<!(?:DOCTYPE|ENTITY)|<script|<foreignObject/i.test(text)) signature="svg";}catch{}
+  }
   const detectedType = resolveSignature(signature, extension);
   let error: string | undefined;
   if (signature === "unknown") error = "Unsupported or unrecognized file signature.";
-  else if (extension && extension !== detectedType && !(expected && expected === detectedType) && !(extension === "heif" && detectedType === "heic")) error = `File extension says ${extension.toUpperCase()}, but contents are ${detectedType.toUpperCase()}.`;
+  else if (extension && extension !== detectedType && !(expected && expected === detectedType) && !(extension === "heif" && detectedType === "heic") && !(extension === "tif" && detectedType === "tiff")) error = `File extension says ${extension.toUpperCase()}, but contents are ${detectedType.toUpperCase()}.`;
   else if (mimeToFormat[mime] && mimeToFormat[mime] !== detectedType) error = `File MIME type says ${mimeToFormat[mime].toUpperCase()}, but contents are ${detectedType.toUpperCase()}.`;
   const animated = !error ? await animationKind(file, detectedType) : null;
   if (animated) error = animated === "webp" ? "Animated WebP is not supported yet." : animated === "apng" ? "APNG is not supported yet." : "Animated GIF conversion is not supported yet.";

@@ -8,7 +8,7 @@ from defusedxml.ElementTree import fromstring
 from PIL import Image
 
 MAX_SVG_BYTES = 2 * 1024 * 1024
-ALLOWED = {'svg', 'g', 'defs', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'text', 'tspan', 'linearGradient', 'radialGradient', 'stop', 'clipPath', 'mask', 'use', 'symbol', 'title', 'desc'}
+ALLOWED = {'svg', 'g', 'defs', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'text', 'tspan', 'linearGradient', 'radialGradient', 'stop', 'clipPath', 'mask', 'symbol', 'title', 'desc'}
 
 @lru_cache(maxsize=1)
 def available() -> bool:

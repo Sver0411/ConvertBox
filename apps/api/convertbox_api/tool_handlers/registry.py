@@ -55,4 +55,8 @@ def make_tool_registry() -> ToolHandlerRegistry:
     register_images(registry)
     from .pdf import register_pdf
     register_pdf(registry)
+    from .media import register_media
+    register_media(registry)
+    from .inspect import register_inspect
+    register_inspect(registry)
     return registry

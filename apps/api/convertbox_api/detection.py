@@ -114,13 +114,14 @@ def detect_file(path: Path, name: str, *, allow_animation: bool = False) -> str:
             actual = suffix if suffix in ("mp4", "mov", "m4a") else "mp4"
     elif header.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1") and suffix in ("doc", "xls", "ppt"):
         actual = suffix
-    elif header.startswith(b"PK\x03\x04"):
+    elif header.startswith((b"PK\x03\x04", b"PK\x05\x06")):
         try:
             with ZipFile(path) as archive:
                 if len(archive.infolist()) > 10000:
                     raise InvalidFile("Office container has too many entries")
                 if sum(item.file_size for item in archive.infolist()) > 500 * 1024 * 1024:
                     raise InvalidFile("Office container is too large after extraction")
+                actual = "zip"
                 names = set(archive.namelist())
                 if "word/document.xml" in names:
                     actual = "docx"
@@ -139,6 +140,27 @@ def detect_file(path: Path, name: str, *, allow_animation: bool = False) -> str:
                     }.get(mime)
         except BadZipFile as exc:
             raise InvalidFile("Invalid Office container") from exc
+    if actual is None and header.startswith(b"\x1f\x8b"):
+        actual = "gz"
+    if actual is None and header.startswith(b"7z\xbc\xaf\x27\x1c"):
+        actual = "7z"
+    if actual is None and header.startswith(b"Rar!\x1a\x07"):
+        actual = "rar"
+    if actual is None and suffix in ("json", "yaml", "yml", "csv", "txt", "md", "xml"):
+        if path.stat().st_size > 8 * 1024 * 1024:
+            raise InvalidFile("Text exceeds 8 MB")
+        try:
+            text = path.read_text(encoding="utf-8-sig")
+            if "\x00" in text: raise ValueError()
+            if suffix == "json":
+                import json
+                json.loads(text)
+            if suffix == "xml":
+                from defusedxml.ElementTree import fromstring
+                fromstring(text, forbid_dtd=True, forbid_entities=True, forbid_external=True)
+            actual = suffix
+        except Exception as exc:
+            raise InvalidFile("Invalid text encoding or contents") from exc
     if actual is None:
         raise InvalidFile("Unsupported or unrecognized file signature")
     if suffix and actual != suffix:

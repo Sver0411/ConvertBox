@@ -176,3 +176,14 @@ html[data-theme=dark] .tools-home-shell{background:#141b25}html[data-theme=dark]
 .pdf-page-grid>div { border:1px solid var(--border);border-radius:12px;padding:10px;overflow:hidden; }
 .pdf-page-grid img { width:100%;height:170px;object-fit:contain;margin:12px 0;transition:transform .2s; }
 .pdf-page-grid label { font-size:12px;display:flex;gap:6px; }
+.archive-entries { max-height:360px;overflow:auto;margin:16px 0; }
+.archive-entries label { display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px; }
+.archive-entries label span:nth-child(2) { flex:1;overflow-wrap:anywhere; }
+.tool-page { width:min(1432px,calc(100% - 48px));margin:18px auto 22px;border-radius:24px; }
+.tool-page-heading+span { color:var(--muted); }
+.tool-page button { transition:background .16s,transform .16s; }
+.tool-page button:active:not(:disabled) { transform:scale(.98); }
+.tool-page-heading h1 { letter-spacing:-.035em; }
+.tools-home-header select { border:1px solid var(--border);border-radius:9px;padding:7px 10px;background:var(--surface);color:var(--text); }
+@media(prefers-reduced-motion:reduce){.tool-page button,.pdf-page-grid img{transition:none}}
+.tool-page .crop-resize-handle { position:absolute;z-index:2;width:22px;height:22px;padding:0;background:#fff;color:#3478f6;touch-action:none;cursor:nwse-resize;border:2px solid #3478f6;border-radius:5px; }

@@ -1,18 +1,16 @@
+import {parse,printParseErrorCode,type ParseError} from "jsonc-parser";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 export const MAX_TEXT_BYTES = 8 * 1024 * 1024;
 
 export function parseJson(text: string): unknown {
-  try { return JSON.parse(text); }
-  catch (error) {
-    const message = error instanceof Error ? error.message : "Invalid JSON";
-    const position = /position (\d+)/i.exec(message);
-    const at = position ? Number(position[1]) : 0;
-    const before = text.slice(0, at);
-    const line = before.split("\n").length;
-    const column = at - before.lastIndexOf("\n");
-    throw new Error(`JSON: ${line}:${column} — ${message}`);
+  const errors: ParseError[] = [];
+  const value = parse(text, errors, {disallowComments:true,allowTrailingComma:false,allowEmptyContent:false});
+  if (errors.length) {
+    const before=text.slice(0,errors[0].offset);
+    throw new Error(`JSON: ${before.split("\n").length}:${errors[0].offset-before.lastIndexOf("\n")} — ${printParseErrorCode(errors[0].error)}`);
   }
+  return value;
 }
 
 export function parseCsv(text: string): string[][] {
@@ -57,7 +55,7 @@ export function jsonToCsv(value: unknown): string {
   const escape = (item: unknown) => {
     let text = item === null || item === undefined ? "" : String(item);
     // Protect spreadsheet applications from interpreting data as formulas.
-    if (/^[=+@-]/.test(text)) text = `'${text}`;
+    if (/^[\s]*[=+@-]/.test(text)) text = `'${text}`;
     return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
   };
   return [keys.map(escape).join(","), ...rows.map(row => keys.map(key => escape(row[key])).join(","))].join("\r\n");
@@ -66,7 +64,11 @@ export function jsonToCsv(value: unknown): string {
 export function transformData(toolId: string, text: string, indent: string = "2"): string {
   if (new TextEncoder().encode(text).byteLength > MAX_TEXT_BYTES) throw new Error("Text input exceeds 8 MB.");
   if (toolId === "data.csv-json") return JSON.stringify(csvToJson(text), null, 2);
-  if (toolId === "data.yaml-json") return JSON.stringify(parseYaml(text, { maxAliasCount: 0, uniqueKeys: true }), null, 2);
+  if (toolId === "data.yaml-json") {
+    const value=parseYaml(text, {maxAliasCount:0,uniqueKeys:true});
+    const check=(item:unknown):void=>{if(typeof item==='number'&&!Number.isFinite(item))throw new Error('Non-finite YAML numbers are not supported by JSON.');if(item&&typeof item==='object'){if(!Array.isArray(item)&&Object.getPrototypeOf(item)!==Object.prototype&&Object.getPrototypeOf(item)!==null)throw new Error('YAML value cannot be represented as JSON.');for(const child of Object.values(item))check(child);}};
+    check(value);return JSON.stringify(value,null,2);
+  }
   const value = parseJson(text);
   switch (toolId) {
     case "data.json-format": return JSON.stringify(value, null, indent === "tab" ? "\t" : Number(indent) === 4 ? 4 : 2);

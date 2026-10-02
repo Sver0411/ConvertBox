@@ -13,7 +13,7 @@ const icons = { image: ImageIcon, pdf: FileText, document: FileText, data: Table
 
 function ToolCard({ tool, language, favorite, onFavorite }: { tool: ToolDefinition; language: Language; favorite: boolean; onFavorite: () => void }) {
   const Icon = icons[tool.category];
-  return <div className="tool-card glass"><Link href={toolPath(tool)}><span className="tool-card-icon"><Icon size={22} strokeWidth={1.8} /></span><span className="tool-card-copy"><strong>{tool.name[language]}</strong><span>{tool.description[language]}</span></span><ArrowRight size={17} className="tool-card-arrow" /></Link><button type="button" className={`favorite-button ${favorite ? "is-favorite" : ""}`} onClick={onFavorite} aria-label={`${favorite ? "取消收藏" : "收藏"} ${tool.name.zh}`} title={favorite ? "取消收藏" : "收藏"}><Star size={18} fill={favorite ? "currentColor" : "none"} /></button></div>;
+  return <div className="tool-card glass"><Link href={toolPath(tool)}><span className="tool-card-icon"><Icon size={22} strokeWidth={1.8} /></span><span className="tool-card-copy"><strong>{tool.name[language]}</strong><span>{tool.description[language]}</span></span><ArrowRight size={17} className="tool-card-arrow" /></Link><button type="button" className={`favorite-button ${favorite ? "is-favorite" : ""}`} onClick={onFavorite} aria-label={`${language === "zh" ? favorite ? "取消收藏" : "收藏" : favorite ? "Unfavorite" : "Favorite"} ${tool.name[language]}`} title={language === "zh" ? favorite ? "取消收藏" : "收藏" : favorite ? "Unfavorite" : "Favorite"}><Star size={18} fill={favorite ? "currentColor" : "none"} /></button></div>;
 }
 
 export default function ToolsHome() {

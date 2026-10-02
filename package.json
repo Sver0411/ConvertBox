@@ -1,7 +1,9 @@
 {
   "name": "convertbox",
   "private": true,
-  "workspaces": ["apps/web"],
+  "workspaces": [
+    "apps/web"
+  ],
   "scripts": {
     "dev": "concurrently -k -n web,api \"npm run dev -w apps/web\" \"cd apps/api && uv run python -m uvicorn convertbox_api.main:app --reload --host 127.0.0.1 --port 8000\"",
     "dev:web": "npm run dev -w apps/web",
@@ -13,7 +15,8 @@
     "test:e2e:chromium": "npm run test:e2e -w apps/web -- --project=chromium-full --project=chromium-critical",
     "test:api": "cd apps/api && uv run --extra test python -m pytest tests",
     "test:load": "python3 tests/load/quick.py",
-    "test:load:extended": "cd apps/api && uv run --extra test python ../../tests/load/extended.py"
+    "test:load:extended": "cd apps/api && uv run --extra test python ../../tests/load/extended.py",
+    "generate-tool-docs": "node scripts/generate-tool-docs.cjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

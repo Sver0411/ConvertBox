@@ -41,6 +41,7 @@ export interface ToolExecutionRequest {
 }
 
 export type ToolResult =
+  | { kind: "server-files"; files: {jobId:string;name:string;size:number}[] }
   | { kind: "server-file"; jobId: string; name: string; size: number }
   | { kind: "file"; blob: Blob; name: string }
   | { kind: "files"; files: { blob: Blob; name: string }[] }

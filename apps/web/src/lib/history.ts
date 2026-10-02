@@ -1,5 +1,7 @@
 export interface HistoryEntry {
   schemaVersion?: number;
+  toolId?: string;
+  status?: "COMPLETED" | "FAILED";
   id: string;
   name: string;
   inputFormat: string;
@@ -36,7 +38,7 @@ export async function listHistory(): Promise<HistoryEntry[]> {
   try {
     const entries = await requestResult(database.transaction(STORE, "readonly").objectStore(STORE).getAll() as IDBRequest<unknown[]>);
     return entries.filter((item): item is HistoryEntry => typeof item === "object" && item !== null && typeof (item as HistoryEntry).id === "string" && typeof (item as HistoryEntry).name === "string" && typeof (item as HistoryEntry).createdAt === "number" && typeof (item as HistoryEntry).inputFormat === "string" && typeof (item as HistoryEntry).outputFormat === "string")
-      .map(item => ({ ...item, schemaVersion: 2, settings: item.settings && typeof item.settings === "object" ? item.settings : {}, inputSize: Number.isFinite(item.inputSize) ? item.inputSize : 0, outputSize: Number.isFinite(item.outputSize) ? item.outputSize : 0 }))
+      .map(item => ({ ...item, schemaVersion: 3, toolId: item.toolId ?? (item.inputFormat === "pdf" ? "pdf.convert" : ["jpg","png","webp","heic","avif","tiff","ico","svg"].includes(item.inputFormat) ? "image.convert" : ["mp3","wav","flac","m4a","ogg","opus"].includes(item.inputFormat) ? "audio.convert" : "video.convert"), status: item.status ?? "COMPLETED", settings: item.settings && typeof item.settings === "object" ? item.settings : {}, inputSize: Number.isFinite(item.inputSize) ? item.inputSize : 0, outputSize: Number.isFinite(item.outputSize) ? item.outputSize : 0 }))
       .sort((a, b) => b.createdAt - a.createdAt);
   } finally {
     database.close();
@@ -46,7 +48,7 @@ export async function listHistory(): Promise<HistoryEntry[]> {
 export async function saveHistory(entry: HistoryEntry): Promise<void> {
   const database = await openDatabase();
   try {
-    await requestResult(database.transaction(STORE, "readwrite").objectStore(STORE).put({ ...entry, schemaVersion: 2 }));
+    await requestResult(database.transaction(STORE, "readwrite").objectStore(STORE).put({ ...entry, schemaVersion: 3, settings: Object.fromEntries(Object.entries(entry.settings).filter(([key]) => !["password", "confirm_password", "text"].includes(key))) }));
   } finally {
     database.close();
   }

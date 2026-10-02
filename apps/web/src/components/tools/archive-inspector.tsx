@@ -1,0 +1,10 @@
+'use client';
+import {useEffect,useState} from 'react';
+import {archiveDirectory,extractZip,createZip,MAX_ARCHIVE_BYTES,type ArchiveEntry} from '@/lib/tools/archive';
+export default function ArchiveInspector({file,language}: {file:File;language:'zh'|'en'}) {
+ const [entries,setEntries]=useState<ArchiveEntry[]>([]),[selected,setSelected]=useState<string[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+ const t=(zh:string,en:string)=>language==='zh'?zh:en;
+ useEffect(()=>{let active=true;setError('');setEntries([]);void(async()=>{try{if(file.size>MAX_ARCHIVE_BYTES)throw new Error('Archive exceeds 64 MB');const directory=archiveDirectory(new Uint8Array(await file.arrayBuffer()));if(active){setEntries(directory);setSelected([]);}}catch(error){if(active)setError(error instanceof Error?error.message:String(error));}})();return()=>{active=false;};},[file]);
+ const download=async()=>{setBusy(true);try{const files=extractZip(new Uint8Array(await file.arrayBuffer()),selected);const zip=await createZip(files);const url=URL.createObjectURL(zip),a=document.createElement('a');a.href=url;a.download='selected.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(error){setError(error instanceof Error?error.message:String(error));}finally{setBusy(false);}};
+ return <section>{error&&<p role="alert">{error}</p>}{!!entries.length&&<><p>{entries.length} {t('项','entries')} · {(entries.reduce((sum,entry)=>sum+entry.size,0)/1024/1024).toFixed(1)} MB {t('解压后','uncompressed')}</p><button disabled={busy||!selected.length} onClick={()=>void download()}>{t('下载所选 ZIP','Download selected as ZIP')}</button><div className="archive-entries">{entries.map(entry=><label key={entry.name}><input type="checkbox" disabled={busy||entry.name.endsWith('/')} checked={selected.includes(entry.name)} onChange={event=>setSelected(values=>event.target.checked?[...values,entry.name]:values.filter(name=>name!==entry.name))}/><span>{entry.name}</span><span>{entry.size} B</span></label>)}</div></>}</section>;
+}
