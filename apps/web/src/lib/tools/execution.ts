@@ -1,3 +1,4 @@
+import {validateToolInputs,MAX_LOCAL_BATCH_BYTES} from './limits';
 import type { ToolExecutionRequest, ToolResult } from './registry';
 import { getTool } from './registry';
 import { editImage } from './local-images';
@@ -10,6 +11,7 @@ export async function executeTool(request: ToolExecutionRequest, signal: AbortSi
   const serverResults:{jobId:string;name:string;size:number}[]=[];
   const tool = getTool(toolId);
   if (!tool) throw new Error('Unknown tool');
+  validateToolInputs(tool,files);
   if (toolId.startsWith('data.')) {
     if (files[0]?.size > MAX_TEXT_BYTES) throw new Error('Text input exceeds 8 MB');
     const source = files.length ? new TextDecoder('utf-8',{fatal:true}).decode(await files[0].arrayBuffer()) : String(settings.text ?? '');
@@ -31,7 +33,8 @@ export async function executeTool(request: ToolExecutionRequest, signal: AbortSi
   const localImage = tool.processing !== 'server' && toolId.startsWith('image.') && files.every(file=>file.size<=25*1024*1024&&['image/jpeg','image/png','image/webp'].includes(file.type)) && !settings.keep_icc;
   if (localImage) {
     const results = [];
-    for (let index=0;index<files.length;index++) { results.push({blob:await editImage(files[index],toolId,settings,signal),name:`${files[index].name.replace(/\.[^.]+$/,'')}.${settings.output ?? 'png'}`});progress((index+1)/files.length); }
+    let outputBytes=0;
+    for (let index=0;index<files.length;index++) { results.push({blob:await editImage(files[index],toolId,settings,signal),name:`${files[index].name.replace(/\.[^.]+$/,'')}.${settings.output ?? 'png'}`});outputBytes+=results[results.length-1].blob.size;if(files.length>1&&outputBytes>MAX_LOCAL_BATCH_BYTES)throw new Error('Image batch results exceed 64 MB. Use smaller batches.');progress((index+1)/files.length); }
     return results.length===1?{kind:'file',...results[0]}:{kind:'files',files:results};
   }
   if (tool.batchSupport && files.length>1) {

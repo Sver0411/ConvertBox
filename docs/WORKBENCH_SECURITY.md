@@ -4,6 +4,8 @@
 
 Data transformation, hash, ZIP and rename run in the browser. The UI labels local/server execution. Hybrid image tools use browser processing for static JPEG/PNG/WebP and the server for other inputs or ICC preservation. Server batches run sequentially; downloads remain direct links so large outputs are not loaded as browser Blobs.
 
+Image selections are capped at 100; image batch inputs and retained outputs each at 64 MiB. ZIP create/rename may select up to 1000 entries within the ZIP byte cap. Hash remains chunked and accepts large individual files.
+
 ## SVG
 
 2 MiB, 5000 elements, 12000 px dimension / 80 MP limits. defusedxml rejects DTD/entities/external entities. An allowlist excludes script, foreignObject, image, style and use; event handlers, external href/URLs and custom font declarations are rejected. Cairo resource fetching is denied. Rendering runs in a child process with a 30 second deadline. SVG source is never inserted into the DOM. Cairo must be installed by the deployment operator; capabilities omit SVG when missing. Accepted SVG is deliberately a restricted subset.

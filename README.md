@@ -29,7 +29,7 @@ A privacy-friendly, self-hosted file workbench for converting, compressing, insp
 
 ## 边界
 
-- 本地图片单文件 ≤25 MB，估算内存预算 256 MiB；动画转换明确拒绝。
+- 本地图片单文件 ≤25 MB，批量输入/结果各 ≤64 MB、≤100 个文件，估算内存预算 256 MiB；动画转换明确拒绝。
 - PDF 编辑 ≤200 页；预览与报告 ≤16 MiB；服务器输出默认 ≤512 MiB。
 - ZIP 压缩/解压后数据各 ≤64 MiB，≤1000 项；不支持 ZIP64、加密 ZIP、旧式非 UTF-8 名称。
 - 数据文本 ≤8 MiB；JSON/CSV 仅支持扁平对象数组，YAML 禁止别名。

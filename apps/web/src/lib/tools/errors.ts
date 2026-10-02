@@ -13,6 +13,9 @@ export function toolError(error:unknown,language:Language):string {
  const message=error instanceof Error?error.message:String(error);
  if(language==='en')return message;
  if(errors[message])return errors[message];
+ if(message.includes('at most')&&message.includes('files'))return `文件数量超出限制（最多 ${message.match(/\d+/)?.[0]??'100'} 个）。`;
+ if(message.includes('Image batch'))return '图片批量输入与结果最多 64 MB，请减少文件后重试。';
+ if(message==='This tool accepts one file')return '此工具一次处理一个文件。';
  if(message.startsWith('JSON:'))return message.replace('JSON:','JSON 位置：');
  if(message.includes('alias')||message.includes('Alias'))return 'YAML 不支持别名引用，请展开内容后重试。';
  if(message.includes('ZIP'))return 'ZIP 无法安全处理，请检查文件格式、路径或大小。';
