@@ -7,3 +7,7 @@ Tool presets v3 migrate existing custom v1/v2 presets while preserving original 
 Validation: 35 frontend unit tests passed, including known hash vectors, CSV semantics/quotes/formula protection, JSON errors, YAML aliases, ZIP traversal/CRC and migration. Chromium suite 32 passed before the final crop resize handle improvement; final targeted smoke and API/build/CI verification are tracked in PHASE_8_REVIEW.md.
 
 Known limits: archive input/expanded data 64 MiB, no ZIP64/encryption/legacy filename decoding; JSON/CSV supports flat arrays only; no full workflow engine or TAR/7z extraction.
+
+## Final integrated verification — 2026-10-02
+
+Final code `7cc5628`: lint/typecheck/build/catalog PASS, 35 frontend unit, 49 API and 40 cross-browser E2E PASS; load regressions PASS. [CI run](https://github.com/Sver0411/ConvertBox/actions/runs/36979825491). Earlier pending checks above describe their subphase checkpoints; final integrated checks are complete. See PHASE_8_REVIEW.md for limits and deferred work.

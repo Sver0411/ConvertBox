@@ -18,14 +18,24 @@ Baseline: `5cc7bed`. Implemented in successive tool center, image/PDF, media and
 
 See [Workbench security](docs/WORKBENCH_SECURITY.md). SVG restricted allowlist + defusedxml + no resource fetch + subprocess timeout; ZIP central/local validation, traversal/symlink/encryption/ZIP64 rejection, expansion/entry caps and CRC; XML no DTD/entities. Password cleared from queued deletion and worker completion, never logged/persisted to presets/history. Original upload admission, disk headroom, queues, worker/video limits, output/PDF caps and TTL remain.
 
-## Verification
+## Verification — final code `7cc5628`
 
-- Lint PASS, typecheck PASS.
-- Frontend unit 35 PASS (including Office/image/audio legacy history mapping).
-- API final local suite: 47 PASS / 2 skipped (49 total). Linux CI at `6c9968a` ran the earlier 48 tests without skips; the final suite includes the palette preservation regression.
-- Chromium 32 PASS plus targeted visual crop and organizer export tests PASS. Tests inspect resize-handle movement, square pixel output, actual PDF page order/rotation and deletion.
-- Production build PASS (tool route ~208 kB first-load JS).
-- CI at `6c9968a`: PASS, 48 API / 32 unit / 38 cross-browser E2E / load regressions. Final hardening head gate pending. Pushes use a temporary per-command Git DNS route; no global network configuration changed.
+[Successful CI run](https://github.com/Sver0411/ConvertBox/actions/runs/36979825491), 2026-10-02:
+
+| Gate | Result |
+|---|---|
+| Lint | PASS |
+| Typecheck | PASS |
+| Frontend unit | 35 PASS |
+| API / processors | 49 PASS, no skips on Linux |
+| E2E (Chromium full + Chromium/Firefox/WebKit critical) | 40 PASS |
+| Production build | PASS; tool route ~208 kB first-load JS |
+| Load regressions | 6 API + 2 memory scheduler PASS |
+| Generated tool catalog consistency | PASS |
+
+Local Mac API: 47 PASS / 2 skipped because Cairo and one required encoder are missing. The Linux gate supplies these dependencies and runs every processor test. The browser tests include actual free crop resizing/square pixel export and PDF export order, rotation and deletion, not only output existence. The documentation-only verification commit does not change executable code; it records this completed run.
+
+Pushes use a temporary per-command Git DNS route; no global network configuration changed. Production preview started directly at localhost:3000 with the API at localhost:8000. Docker was not used.
 
 ## Limits / deferred
 
