@@ -28,6 +28,7 @@ export default function ToolsHome() {
   const tools = useMemo(() => searchTools(query, available).filter(tool => category === "all" || tool.category === category), [query, available, category]);
   const favorites = prefs.favorites.map(id => available.find(tool => tool.id === id)).filter((tool): tool is ToolDefinition => !!tool);
   const recent = prefs.recent.map(item => available.find(tool => tool.id === item.id)).filter((tool): tool is ToolDefinition => !!tool);
+  const popular = ["image.convert","image.compress","pdf.merge","pdf.compress","video.extract-audio","file.hash","data.json-format","archive.zip-create"].map(id => available.find(tool=>tool.id===id)).filter((tool):tool is ToolDefinition=>!!tool);
   const onFavorite = (id: string) => setPrefs(toggleFavorite(id));
   return <div className="tools-home-shell">
     <header className="tools-home-header glass"><Link href="/" className="header-context">{language === "zh" ? "文件工作台" : "File workbench"}</Link><div><Link href="/convert">{language === "zh" ? "转换" : "Convert"}</Link><Link href="/convert?tool=history">{language === "zh" ? "记录" : "History"}</Link><button className="language-switch" onClick={() => setLanguage(value => value === "zh" ? "en" : "zh")}>{language === "zh" ? "EN" : "中文"}</button></div></header>
@@ -37,6 +38,7 @@ export default function ToolsHome() {
         <div className="tools-home-sections">
           {!query && category === "all" && favorites.length > 0 && <section><h2>{language === "zh" ? "收藏" : "Favorites"}</h2><div className="tool-grid">{favorites.map(tool => <ToolCard key={tool.id} tool={tool} language={language} favorite onFavorite={() => onFavorite(tool.id)} />)}</div></section>}
           {!query && category === "all" && recent.length > 0 && <section><h2>{language === "zh" ? "最近使用" : "Recent"}</h2><div className="tool-grid">{recent.map(tool => <ToolCard key={tool.id} tool={tool} language={language} favorite={prefs.favorites.includes(tool.id)} onFavorite={() => onFavorite(tool.id)} />)}</div></section>}
+          {!query && category === "all" && <section><h2>{language === "zh" ? "常用工具" : "Popular tools"}</h2><div className="tool-grid">{popular.map(tool=><ToolCard key={tool.id} tool={tool} language={language} favorite={prefs.favorites.includes(tool.id)} onFavorite={()=>onFavorite(tool.id)}/>)}</div></section>}
           <section><h2>{query ? (language === "zh" ? "搜索结果" : "Results") : category === "all" ? (language === "zh" ? "全部工具" : "All tools") : categoryNames[category][language]}</h2>{tools.length ? <div className="tool-grid">{tools.map(tool => <ToolCard key={tool.id} tool={tool} language={language} favorite={prefs.favorites.includes(tool.id)} onFavorite={() => onFavorite(tool.id)} />)}</div> : <p className="tools-empty">{language === "zh" ? "没有找到可用工具" : "No available tools found"}</p>}</section>
         </div>
       </main>

@@ -15,7 +15,7 @@ export async function executeTool(request: ToolExecutionRequest, signal: AbortSi
   if (toolId.startsWith('data.')) {
     if (files[0]?.size > MAX_TEXT_BYTES) throw new Error('Text input exceeds 8 MB');
     const source = files.length ? new TextDecoder('utf-8',{fatal:true}).decode(await files[0].arrayBuffer()) : String(settings.text ?? '');
-    return {kind:'text',text:transformData(toolId,source,String(settings.indent ?? '2')),name:`result.${toolId.endsWith('csv')?'csv':toolId.endsWith('yaml')?'yaml':'json'}`};
+    return {kind:'text',text:transformData(toolId,source,String(settings.indent ?? '2')),name:toolId==='data.json-validate'?'validation.txt':`result.${toolId.endsWith('csv')?'csv':toolId.endsWith('yaml')?'yaml':'json'}`};
   }
   if (!files.length) throw new Error('Choose a file');
   if (toolId === 'file.hash') {
