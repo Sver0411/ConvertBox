@@ -49,7 +49,7 @@ for (const [route,name,file] of [
  await page.getByRole('button',{name:/^(处理并导出|计算校验值|处理文本|重命名并打包|检查目录|提取文件)$/}).click();await expect(page.locator('.tool-result')).toBeVisible({timeout:60000});await expect(page.locator('.tool-page').getByRole('alert')).toHaveCount(0);
  if(route==='file/hash')await expect(page.locator('.tool-result')).toContainText('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
  if(route==='image/metadata')await expect(page.locator('.tool-result')).toContainText('宽度');
- await page.getByLabel('主题',{exact:true}).selectOption('dark');await expect(page.locator('html')).toHaveAttribute('data-theme','dark');if(route==='image/crop')await page.screenshot({path:'../../docs/screenshots/workbench-crop.png'});
+ await page.getByLabel('主题',{exact:true}).selectOption('dark');await expect(page.locator('html')).toHaveAttribute('data-theme','dark');if(route==='image/crop'){await expect(page.getByRole('button',{name:'替换文件'})).toHaveCSS('background-color','rgb(32, 45, 61)');await page.screenshot({path:'../../docs/screenshots/workbench-crop.png'});}
 });
 for(const [route,input,result] of [['json-format','{"a":1}','"a": 1'],['csv-json','name,age\nA,20','"name": "A"']] as const)test(`data ${route}`,async({page})=>{await page.goto(`/tools/data/${route}`);await page.getByLabel('输入文本',{exact:true}).fill(input);await page.getByRole('button',{name:'处理文本'}).click();await expect(page.locator('.tool-result')).toContainText(result);});
 
